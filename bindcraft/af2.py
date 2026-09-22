@@ -12,6 +12,7 @@ from bindcraft.af.alphafold.model import config as af_config, data as af_data, m
 from bindcraft.af import accel
 from bindcraft.prediction import DifferentiableProteinPredictor, CompiledModelCache, residue_chain_ids, concatenate_chain_arrays, collect_shared_chains, split_residue_arrays_by_chain
 from bindcraft.loss import DesignLoss, frozen_interface_arguments, renamed_loss_name, renamed_state_losses
+from bindcraft.ipsae import DEFAULT_PAE_CUTOFF, ipsae, ipsae_by_residue
 from bindcraft.sequence_optimization import sequence_features_from_logits
 from bindcraft.protein import ATOM_INDEX, ATOM_NAMES, BINDER_ALONE, BINDER_CHAIN_PREFIX, StructurePrediction, StructurePredictions, Protein, ResidueFlags, ProteinStates, has_residue_flag, is_binder_chain, is_target_chain, kabsch, real_residue_weights
 
@@ -112,6 +113,12 @@ def interface_asym_ids(chain_names: tuple[str, ...], chain_lengths: tuple[int, .
         return residue_chain_ids(chain_lengths)
     return jnp.concatenate([jnp.full((length,), assembly_names.index(assembly_name(name)), dtype=jnp.int32) for name, length in zip(chain_names, chain_lengths)])
 
+def binder_residue_mask(chain_names: tuple[str, ...], chain_lengths: tuple[int, ...]) -> Array:
+    """1.0 on residues of a designed chain. interface_asym_ids cannot stand in for this: it folds
+    every binder chain into one assembly but leaves the target chains apart, so on a multi-chain
+    target it is not a binder/target binary."""
+    return jnp.concatenate([jnp.full((length,), float(is_binder_chain(name)), dtype=jnp.float32) for name, length in zip(chain_names, chain_lengths)])
+
 def cyclic_sequence_offsets(residue_index: Array, asym_id: Array, flags: Array, seq_mask: Array, offset_mode: str='direction') -> Array:
     offsets = residue_index[:, None] - residue_index[None, :]
     same_chain = asym_id[:, None] == asym_id[None, :]
@@ -142,7 +149,7 @@ def recycled_alphafold_outputs(alphafold_runner: af_model.RunModel, model_parame
             model_inputs = {**model_inputs, 'initial_atom_pos': previous_state['prev_pos']}
     return alphafold_runner.apply(model_parameters, recycle_keys[-1], {**model_inputs, 'prev': previous_state})
 
-def alphafold_prediction_metrics(alphafold_outputs: dict, seq_mask: Array, interface_asym_id: Array) -> dict[str, Array]:
+def alphafold_prediction_metrics(alphafold_outputs: dict, seq_mask: Array, interface_asym_id: Array, binder_mask: Array) -> dict[str, Array]:
     metrics: dict[str, Array] = {}
     if 'predicted_lddt' in alphafold_outputs:
         confidence_logits = alphafold_outputs['predicted_lddt']['logits']
@@ -159,6 +166,12 @@ def alphafold_prediction_metrics(alphafold_outputs: dict, seq_mask: Array, inter
         metrics['pae'] = (pae + pae.T) / 2
         metrics['ptm'] = confidence.predicted_tm_score(pae_head['logits'], pae_head['breaks'], residue_weights=seq_mask, use_jnp=True)
         metrics['iptm'], metrics['iptm_per_residue'] = confidence.predicted_tm_score(pae_head['logits'], pae_head['breaks'], residue_weights=seq_mask, asym_id=interface_asym_id, use_jnp=True, return_per_alignment=True)
+        #ipSAE reads the RAW asymmetric matrix, not metrics['pae'], which line above symmetrizes;
+        #upstream runs on AlphaFold's asymmetric PAE and the two differ by ~30% on a real interface
+        real_binder = binder_mask * seq_mask
+        real_target = (1.0 - binder_mask) * seq_mask
+        metrics['ipsae'] = ipsae(pae, real_binder, real_target, DEFAULT_PAE_CUTOFF)
+        metrics['ipsae_per_residue'] = ipsae_by_residue(pae, real_binder, real_target, DEFAULT_PAE_CUTOFF)
     if 'experimentally_resolved' in alphafold_outputs:
         metrics['experimentally_resolved_ca'] = jax.nn.sigmoid(alphafold_outputs['experimentally_resolved']['logits'][:, ATOM_INDEX['CA']])
     if 'distogram' in alphafold_outputs:
@@ -274,13 +287,13 @@ class AlphaFoldDesignModel(DifferentiableProteinPredictor):
         compiled_prediction = self.prediction_compile_cache.get(cache_key)
         if compiled_prediction is None:
             alphafold_runner = self._alphafold_runner(model_family, subbatch_size)
-            def predict_complex_arrays(model_parameters: Array, key: Array, sequence: Array, atoms: Array, atom_mask: Array, residue_index: Array, asym_id: Array, entity_id: Array, interface_asym_id: Array, seq_mask: Array, flags: Array, dropout: Array, softmax_weight: Array, one_hot_weight: Array, temperature: Array, logit_scale: Array):
+            def predict_complex_arrays(model_parameters: Array, key: Array, sequence: Array, atoms: Array, atom_mask: Array, residue_index: Array, asym_id: Array, entity_id: Array, interface_asym_id: Array, binder_mask: Array, seq_mask: Array, flags: Array, dropout: Array, softmax_weight: Array, one_hot_weight: Array, temperature: Array, logit_scale: Array):
                 sequence_features, sequence_profile = prepare_design_sequence_features(sequence, flags, softmax_weight, one_hot_weight, temperature, logit_scale)
                 model_inputs = alphafold_input_features(sequence_features, sequence_profile, atoms, atom_mask, residue_index, asym_id, seq_mask, flags, dropout, self.cyclic_offset_mode, entity_id, self.target_flexibility, self.bigbang_initialization)
                 alphafold_outputs = recycled_alphafold_outputs(alphafold_runner, model_parameters, key, model_inputs, self.num_recycle)
                 predicted_atom_positions = alphafold_outputs['structure_module']['final_atom_positions'].astype(jnp.float16)
                 predicted_atom_mask = alphafold_outputs['structure_module']['final_atom_mask'].astype(bool)
-                return predicted_atom_positions, predicted_atom_mask, alphafold_prediction_metrics(alphafold_outputs, seq_mask, interface_asym_id)
+                return predicted_atom_positions, predicted_atom_mask, alphafold_prediction_metrics(alphafold_outputs, seq_mask, interface_asym_id, binder_mask)
             compiled_prediction = jax.jit(predict_complex_arrays)
             self.prediction_compile_cache.set(cache_key, compiled_prediction)
         return compiled_prediction
@@ -302,6 +315,7 @@ class AlphaFoldDesignModel(DifferentiableProteinPredictor):
         asym_id = residue_chain_ids(chain_lengths)
         entity_id = residue_entity_ids(chain_names, chain_lengths, self.multi_chain_binders)
         interface_asym_id = interface_asym_ids(chain_names, chain_lengths)
+        binder_mask = binder_residue_mask(chain_names, chain_lengths)
         if self.model_families[model][0] == 'monomer' and len(chain_names) > 1:
             residue_index = monomer_chain_break_indices(chain_lengths, residue_index)
         seq_mask = real_residue_weights(flags)
@@ -314,8 +328,9 @@ class AlphaFoldDesignModel(DifferentiableProteinPredictor):
             asym_id = jnp.pad(asym_id, [0, padding_length], constant_values=len(chain_names))
             entity_id = jnp.pad(entity_id, [0, padding_length], constant_values=len(chain_names))
             interface_asym_id = jnp.pad(interface_asym_id, [0, padding_length], constant_values=len(chain_names))
+            binder_mask = jnp.pad(binder_mask, [0, padding_length])
             seq_mask = jnp.pad(seq_mask, [0, padding_length])
-        positions, mask, metrics = self._compiled_complex_prediction(model, padded_residue_count)(self.model_parameters[model], self.key, sequence, atoms, atom_mask, residue_index, asym_id, entity_id, interface_asym_id, seq_mask, flags, jnp.asarray(self.dropout), jnp.asarray(softmax_weight), jnp.asarray(one_hot_weight), jnp.asarray(temperature), jnp.asarray(logit_scale))
+        positions, mask, metrics = self._compiled_complex_prediction(model, padded_residue_count)(self.model_parameters[model], self.key, sequence, atoms, atom_mask, residue_index, asym_id, entity_id, interface_asym_id, binder_mask, seq_mask, flags, jnp.asarray(self.dropout), jnp.asarray(softmax_weight), jnp.asarray(one_hot_weight), jnp.asarray(temperature), jnp.asarray(logit_scale))
         positions, mask = positions[:residue_count], mask[:residue_count]
         metrics = {name: trim_prediction_padding(value, residue_count) for name, value in metrics.items()}
         positions = align_prediction_to_target_template(positions, mask, atoms[:residue_count], atom_mask[:residue_count], flags[:residue_count])
@@ -342,7 +357,7 @@ class AlphaFoldDesignModel(DifferentiableProteinPredictor):
                 alphafold_outputs = recycled_alphafold_outputs(alphafold_runner, model_parameters, key, model_inputs, self.num_recycle)
                 predicted_atom_positions = alphafold_outputs['structure_module']['final_atom_positions'].astype(jnp.float16)
                 predicted_atom_mask = alphafold_outputs['structure_module']['final_atom_mask'].astype(bool)
-                metrics = alphafold_prediction_metrics(alphafold_outputs, seq_mask, interface_asym_ids(chain_names, chain_lengths))
+                metrics = alphafold_prediction_metrics(alphafold_outputs, seq_mask, interface_asym_ids(chain_names, chain_lengths), binder_residue_mask(chain_names, chain_lengths))
                 predicted_atom_positions = align_prediction_to_target_template(predicted_atom_positions, predicted_atom_mask, atoms, atom_mask, flags)
                 input_chain_arrays = split_residue_arrays_by_chain(chain_names, chain_lengths, sequence=sequence, atoms=atoms, atom_mask=atom_mask, flags=flags, residue_index=residue_index)
                 predicted_chain_arrays = split_residue_arrays_by_chain(chain_names, chain_lengths, atoms=predicted_atom_positions, atom_mask=predicted_atom_mask)
