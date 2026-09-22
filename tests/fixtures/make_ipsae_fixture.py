@@ -11,6 +11,9 @@ Then re-derive the expected values with upstream ipsae.py v4:
 
 and copy the ipSAE column of the two `asym` rows and the one `max` row into
 UPSTREAM_* in tests/test_ipsae.py.
+
+If the fixture changes, SYMMETRIZED_PAE in tests/test_ipsae.py must also be regenerated
+alongside the UPSTREAM_* constants, by recomputing ipsae() on (pae + pae.T) / 2.
 """
 import json
 import os

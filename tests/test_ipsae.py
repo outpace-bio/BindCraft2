@@ -15,6 +15,9 @@ BINDER_RESIDUES = 12
 UPSTREAM_BINDER_TO_TARGET = 0.047426
 UPSTREAM_TARGET_TO_BINDER = 0.020000
 UPSTREAM_MAX = 0.047426
+# The same fixture read through a symmetrized PAE, which is what metrics['pae'] holds.
+# ipSAE must NOT be computed from that matrix; this constant exists to pin the wrong answer.
+SYMMETRIZED_PAE = 0.033419
 
 
 @pytest.fixture
@@ -43,11 +46,18 @@ def test_matches_upstream_max(fixture_pae, chain_masks):
     assert float(ipsae(fixture_pae, binder, target)) == pytest.approx(UPSTREAM_MAX, abs=1e-6)
 
 
-def test_symmetrized_pae_would_disagree(fixture_pae, chain_masks):
-    """Guards the af2.py:158 vs :159 distinction: ipSAE must read the raw matrix."""
+def test_symmetrizing_the_pae_changes_the_score(fixture_pae, chain_masks):
+    """Guards the af2.py:158 vs :159 distinction: ipSAE must read the raw asymmetric matrix.
+
+    metrics['pae'] holds (pae + pae.T) / 2. Upstream runs on the raw matrix, and on this
+    fixture the two differ by 29.5%. Both constants are pinned so the test fails on a
+    raw/symmetrized swap AND on any implementation that collapses to a constant."""
     binder, target = chain_masks
-    symmetrized = (fixture_pae + fixture_pae.T) / 2
-    assert float(ipsae(symmetrized, binder, target)) != pytest.approx(UPSTREAM_MAX, abs=1e-3)
+    raw = float(ipsae(fixture_pae, binder, target))
+    symmetrized = float(ipsae((fixture_pae + fixture_pae.T) / 2, binder, target))
+    assert raw == pytest.approx(UPSTREAM_MAX, abs=1e-6)
+    assert symmetrized == pytest.approx(SYMMETRIZED_PAE, abs=1e-6)
+    assert abs(raw - symmetrized) / raw > 0.25
 
 
 def test_d0_matches_calc_d0_array_across_the_clamp():
