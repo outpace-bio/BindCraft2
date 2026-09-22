@@ -479,7 +479,7 @@ def load_settings(overrides: dict | None=None) -> dict:
     configure_campaign_features(settings, ConfigurationRequest(overrides, loss_settings))
     for setting_name, filter_name in FINAL_CONFIDENCE_FILTERS.items():
         if setting_name in overrides and isinstance(settings['filters'], dict) and (filter_name not in overrides.get('filters', {})):
-            settings['filters'][filter_name]['threshold'] = float(overrides[setting_name])
+            settings['filters'].setdefault(filter_name, {})['threshold'] = float(overrides[setting_name])
     return settings
 
 def resolved_campaign_facts(settings: dict) -> dict:

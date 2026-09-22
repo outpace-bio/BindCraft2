@@ -97,6 +97,10 @@
       "threshold": 0.7,
       "higher": true
     },
+    "i_pSAE": {
+      "threshold": null,
+      "higher": true
+    },
     "i_pAE": {
       "threshold": 0.35,
       "higher": false
