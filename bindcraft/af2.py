@@ -119,8 +119,9 @@ def chain_residue_masks(chain_names: tuple[str, ...], chain_lengths: tuple[int, 
     ipSAE is defined on an ordered chain PAIR, so the binder copies must not be pooled into one
     mask. Pooling is harmless binder->target, but target->binder it lets a target residue count
     its good pairs against every binder copy at once, which raises n0res, raises d0 and inflates
-    every pTM term; on two 20-residue copies against a 30-residue target it takes the score from
-    0.047426 to 0.117652. Upstream ipsae.py emits one row per ordered chain pair and reports the
+    every pTM term; on tests/fixtures/ipsae_multichain_pae.json, two 20-residue copies against a
+    30-residue target, n0res goes 20 to 40, d0 goes 1.0000 to 1.8258 and the score goes 0.041179
+    to 0.095718. Upstream ipsae.py emits one row per ordered chain pair and reports the
     max over pairs, which is what these rows reproduce.
 
     interface_asym_ids cannot stand in for the split: it folds every binder chain into one
