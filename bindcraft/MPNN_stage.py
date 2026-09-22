@@ -95,7 +95,7 @@ def ensemble_mean_predictions(protein_states: ProteinStates, model_predictions: 
         predictions[name] = StructurePrediction(protein_complex=next(iter(model_predictions.values()))[name].protein_complex, metrics=metrics)
     return predictions
 
-REACHABLE_CONFIDENCE_BOUNDS = {'plddt': (0.0, 1.0), 'ptm': (0.0, 1.0), 'iptm': (0.0, 1.0), 'pae': (0.0, 0.0)}
+REACHABLE_CONFIDENCE_BOUNDS = {'plddt': (0.0, 1.0), 'ptm': (0.0, 1.0), 'iptm': (0.0, 1.0), 'ipsae': (0.0, 1.0), 'pae': (0.0, 0.0)}
 
 def best_reachable_ensemble(model_predictions: dict[str, StructurePredictions], model_count: int, higher: bool) -> StructurePredictions:
     folded = list(model_predictions.values())

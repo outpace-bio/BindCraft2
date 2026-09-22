@@ -15,7 +15,7 @@ TEXT_COLUMNS = ('rank', 'design', 'terminated', 'failed_filters', 'Binder_Sequen
 HYDROPHOBIC_SEQUENCE_LETTERS = 'ACVILMPFWY'
 STRUCTURE_FOLDERS = (RANK_STAGE, os.path.join(REFOLD_STAGE, 'Complexes'), REFOLD_STAGE, 'accepted', 'candidates', '.')
 
-LOWER_IS_BETTER_METRICS = frozenset(('i_pAE', 'i_pAE_detarget', 'i_pTM_detarget', 'Interface_Residues_detarget', 'Backbone_Clashes', 'Binder_Chain_Breaks',
+LOWER_IS_BETTER_METRICS = frozenset(('i_pAE', 'i_pAE_detarget', 'i_pTM_detarget', 'i_pSAE_detarget', 'Interface_Residues_detarget', 'Backbone_Clashes', 'Binder_Chain_Breaks',
                                      'Binder_Free_Cysteines', 'Binder_Length', 'Binder_Loop_Fraction', 'Coldspot_Contact_Fraction', 'Cyclic_Closure_Distance',
                                      'Domain_Separation_Ratio', 'Framework_Packing_Fraction', 'Induced_Fit_Interface_RMSD',
                                      'Induced_Fit_RMSD', 'Induced_Fit_TM', 'MHC_Anchor_Score', 'Off_Epitope_Contact_Fraction', 'Off_Paratope_Contact_Fraction',
@@ -27,6 +27,7 @@ LOWER_IS_BETTER_METRICS = frozenset(('i_pAE', 'i_pAE_detarget', 'i_pTM_detarget'
 MODALITY_METRICS = {
  'every campaign': {'i_pDAE': 'interface pDAE, how well the two sides agree on the pose (the default)',
                     'i_pTM': 'interface pTM of the predicted complex',
+                    'i_pSAE': 'interface pSAE, the Dunbrack interface score (stricter than i_pTM on small epitopes)',
                     'i_pAE': 'interface predicted aligned error',
                     'pTM': 'pTM of the whole complex',
                     'pLDDT': 'binder confidence in the complex',
@@ -58,6 +59,7 @@ MODALITY_METRICS = {
                       'Receptor_Chains_Contacted': 'how many target chains the binder reaches',
                       'Target_Crop_Length': 'residues of the target that were predicted'},
  'multi-target, cross-reactivity and detargeting': {'i_pTM_detarget': 'interface pTM against a state the binder should miss',
+                                                    'i_pSAE_detarget': 'interface pSAE against a state the binder should miss',
                                                     'i_pAE_detarget': 'interface pAE against a detarget state',
                                                     'Interface_Residues_detarget': 'interface it still forms on a detarget state'},
  'scaffolded formats (VHH, scFv, ARP)': {'Scaffold_Sequence_Retained_Fraction': 'scaffold sequence kept after redesign',

@@ -139,13 +139,15 @@ def pseudo_beta_interface_mask(protein_complex: dict[str, Protein], cutoff: floa
     facing_target = {name: ((pairwise_atom_distances(pseudo_beta_coordinates(protein_complex[name])[0], target_coordinates) < cutoff) * target_mask[None, :]).any(-1) & real_residue_mask(protein_complex[name].flags) for name in binder_chains}
     return jnp.concatenate([facing_target.get(name, jnp.zeros(len(protein_complex[name]), dtype=bool)) for name in sorted(protein_complex)])
 
-def interface_confidence_weights(prediction: StructurePrediction, cutoff: float=INTERFACE_CUTOFF) -> dict[str, Array] | None:
+INTERFACE_WEIGHTING_METRICS = {'interface_iptm': 'iptm_per_residue', 'interface_ipsae': 'ipsae_per_residue'}
+
+def interface_confidence_weights(prediction: StructurePrediction, cutoff: float=INTERFACE_CUTOFF, metric: str='iptm_per_residue') -> dict[str, Array] | None:
     protein_complex = prediction.protein_complex
     binder_chains = tuple(name for name in protein_complex if is_binder_chain(name))
-    if 'iptm_per_residue' not in prediction.metrics or not binder_chains or len(binder_chains) == len(protein_complex):
+    if metric not in prediction.metrics or not binder_chains or len(binder_chains) == len(protein_complex):
         return None
     interface_mask = pseudo_beta_interface_mask(protein_complex, cutoff)
-    interface_confidence = jnp.where(interface_mask, 1.0 - prediction.metrics['iptm_per_residue'], 0.0)
+    interface_confidence = jnp.where(interface_mask, 1.0 - prediction.metrics[metric], 0.0)
     interface_mean = interface_confidence.sum() / jnp.maximum(interface_mask.sum(), 1.0)
     weights = jnp.where(interface_mask & (interface_mean > 0), interface_confidence / jnp.maximum(interface_mean, 1e-08), 1.0)
     chain_names = tuple(sorted(protein_complex))
@@ -166,7 +168,7 @@ class SemigreedySequenceSampler(SequenceMutationSampler):
         return next((group for group in self.multi_chain_binders if chain_name in group), (chain_name,))
 
     def interface_weights(self, chain_names: tuple[str, ...], shared_chains: dict[str, Protein]) -> Array:
-        if self.mutation_weighting != 'interface_iptm' or not self.chain_interface_weights:
+        if self.mutation_weighting not in INTERFACE_WEIGHTING_METRICS or not self.chain_interface_weights:
             return jnp.asarray(1.0)
         weights = {name: self.chain_interface_weights.get(name, jnp.ones(len(shared_chains[name]), dtype=jnp.float32)) for name in chain_names}
         for binder_chain_names in self.multi_chain_binders:
@@ -209,10 +211,10 @@ class SemigreedySequenceSampler(SequenceMutationSampler):
             for name, plddt in split_chain_confidence(prediction, 'plddt').items():
                 predicted_chain_confidence.setdefault(name, []).append(plddt)
         self.chain_plddt.update({chain_name: jnp.mean(jnp.stack(state_confidence), axis=0) for chain_name, state_confidence in predicted_chain_confidence.items()})
-        if self.mutation_weighting == 'interface_iptm':
+        if self.mutation_weighting in INTERFACE_WEIGHTING_METRICS:
             predicted_interface_weights: dict[str, list[Array]] = {}
             for prediction in predictions.values():
-                for name, weights in (interface_confidence_weights(prediction) or {}).items():
+                for name, weights in (interface_confidence_weights(prediction, metric=INTERFACE_WEIGHTING_METRICS[self.mutation_weighting]) or {}).items():
                     predicted_interface_weights.setdefault(name, []).append(weights)
             self.chain_interface_weights.update({chain_name: jnp.mean(jnp.stack(state_weights), axis=0) for chain_name, state_weights in predicted_interface_weights.items()})
         if self.best_design_loss is None or design_loss < self.best_design_loss:

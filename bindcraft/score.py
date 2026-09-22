@@ -14,7 +14,7 @@ from bindcraft.protein_preparation import merge_receptor_chains, target_binding_
 SCORED_STATE = 'design'
 SCORED_PROGRESS_INTERVAL = 10
 SCORED_KEPT_INTERVAL = 50
-PREDICTED_METRICS = ('pLDDT', 'pTM', 'i_pTM', 'i_pAE', RANKING_METRIC)
+PREDICTED_METRICS = ('pLDDT', 'pTM', 'i_pTM', 'i_pSAE', 'i_pAE', RANKING_METRIC)
 CAMPAIGN_ONLY_METRICS = ('Off_Paratope_Contact_Fraction',)
 
 def design_chain_roles(chain_names: list[str], binder: str='', target: str='') -> tuple[list[str], list[str]]:
