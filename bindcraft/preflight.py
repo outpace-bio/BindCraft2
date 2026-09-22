@@ -164,7 +164,7 @@ def design_input_problems(design_settings: BinderDesignSettings) -> list[str]:
 def undecided_avoidance(design_settings: BinderDesignSettings) -> str:
     """The off-targets a campaign steers away from and then accepts designs against without asking whether they got away."""
     settings = design_settings.settings
-    if settings.get('max_detarget_interface_residues_final') is not None or any(settings.get(f'max_detarget_iptm_{stage}') is not None for stage in DESIGN_STAGE_NAMES):
+    if settings.get('max_detarget_interface_residues_final') is not None or any(settings.get(f'max_detarget_{metric}_{stage}') is not None for metric in ('iptm', 'ipsae') for stage in DESIGN_STAGE_NAMES):
         return ''
     avoided = detarget_state_names(design_settings)
     return f"{', '.join(avoided)} avoided by weight alone: no ceiling decides it, so a design holding the off-target is accepted" if avoided else ''
