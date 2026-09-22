@@ -71,6 +71,11 @@ metrics['ipsae']              # scalar, max over both directions, cutoff 10
 metrics['ipsae_per_residue']  # binder->target byres array
 ```
 
+Both read the raw `pae` local at `af2.py:158`, not `metrics['pae']`. Line 159 stores
+`(pae + pae.T) / 2`, and upstream ipSAE runs on the raw asymmetric AF2 matrix. On the golden
+fixture the symmetrized matrix gives 0.033419 where upstream gives 0.047426, a 30% error, so
+the distinction is not cosmetic.
+
 `ipsae_per_residue` holds the binder->target direction rather than the max, because
 `sequence_optimization.py` weights mutations and needs one value per binder residue. The
 target->binder array indexes over target residues and cannot weight a binder mutation.
@@ -93,12 +98,15 @@ def ipsae_loss(protein_states, predictions, prediction_state='complex',
     return 1 - soft_ipsae(..., cutoff, temperature)
 ```
 
-The gradient needs two departures from the paper, and nothing we report shares them. At
+The gradient needs three departures from the paper, and nothing we report shares them. At
 `cutoff = 10`, step 0 of a hallucination trajectory sits at PAE around 30 everywhere. No pair
 passes the mask, ipSAE is identically 0, the gradient is identically 0, and the loss has
 nothing to descend. ipTM carries no cutoff and always pulls. So inside the gradient the cutoff
-anneals from 30 down to 10 and `max` becomes `soft_maximum`. Anything we report, filter, rank
-or schedule on still uses the paper's fixed cutoff of 10 and a hard `max`.
+anneals from 30 down to 10 and `max` becomes `soft_maximum`. The loss also reads the
+symmetrized `metrics['pae']` rather than the raw matrix, since the raw one is local to
+`alphafold_prediction_metrics` and keeping a second N-by-N array on every prediction is not
+worth it for a term that already departs twice. Anything we report, filter, rank or schedule
+on still uses the raw PAE, the paper's fixed cutoff of 10, and a hard `max`.
 
 The anneal rides `sequence_hardness`, the mean max-probability of the sequence that
 `loss.py:851` already computes. That walks the cutoff through screen, refine, anneal and
@@ -141,10 +149,13 @@ stays `i_pDAE`.
 The repo has no `tests/` directory and no pytest config, so we create both and add pytest as a
 dev dependency in `pyproject.toml`.
 
-1. Golden test against upstream. Run `/home/bobbylangan/workdir/packages/IPSAE/ipsae.py` (v4)
-   on a real AF2 PDB and PAE json from a past campaign, then assert the JAX `ipsae` matches
-   upstream's `ipSAE` value on the `Type == max` row to roughly 1e-5. Nothing ships until this
-   passes; it is what makes the port trustworthy.
+1. Golden test against upstream. BindCraft2 writes no PAE json, so the fixture is a committed
+   synthetic two-chain model (12-residue binder, 30-residue target) whose interface patch
+   drives `n0res` across 23 to 28 and so exercises the d0 clamp. Running
+   `/home/bobbylangan/workdir/packages/IPSAE/ipsae.py` (v4) on it at cutoffs 10 and 15 gives
+   binder->target 0.047426, target->binder 0.020000, and `max` 0.047426. The test asserts the
+   JAX port hits all three to 1e-6. Nothing ships until this passes; it is what makes the port
+   trustworthy.
 2. `d0` boundary. Assert `d0` at `n0res` of 26, 27 and 28 equals `calc_d0_array`, giving
    1.0, 1.0389 and 1.1157. That is where the two upstream d0 functions disagree.
 3. Gradient liveness. `soft_ipsae` stays finite and non-zero at PAE around 30 with a cutoff of
