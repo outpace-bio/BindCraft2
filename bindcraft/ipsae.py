@@ -13,6 +13,10 @@ import jax.numpy as jnp
 from jax import Array
 
 DEFAULT_PAE_CUTOFF = 10.0
+#mirrors ipsae_loss's `warmup_cutoff` default in bindcraft/loss.py -- exists so the reported
+#metrics can show what the loss sees at the permissive end of its anneal. If the two ever
+#diverge, this observation stops being meaningful.
+WARMUP_PAE_CUTOFF = 30.0
 #upstream calc_d0_array clamps the length rather than branching on it, which is what the
 #d0res variant uses; the scalar calc_d0 branches at L > 27 and is for d0chn and d0dom only
 D0_MINIMUM_LENGTH = 26.0

@@ -218,3 +218,114 @@ def test_a_binder_alone_state_reports_zero_ipsae():
                        jnp.ones(residues, dtype=jnp.float32), ('binder',), (residues,))
     assert float(metrics['ipsae']) == 0.0
     assert float(jnp.abs(metrics['ipsae_per_residue']).max()) == 0.0
+
+
+# --- observation-only scalars: ipsae_warmup, ipsae_scored_fraction(_warmup), interface_pae_min ---
+#
+# These exist so a trajectory run with the ipSAE loss weight at 0 can still show what that loss
+# would have seen: ipsae_loss anneals its cutoff from WARMUP_PAE_CUTOFF (30) down to
+# DEFAULT_PAE_CUTOFF (10) as the sequence hardens, and metrics['ipsae'] only ever reports the
+# hardened end. Nothing in af2.py gates, filters or optimizes on any of the four; they are read
+# straight out of the metrics dict by trajectory_output.py's per-step CSV recorder.
+
+OBSERVATION_ONLY_METRICS = ('ipsae_warmup', 'ipsae_scored_fraction', 'ipsae_scored_fraction_warmup', 'interface_pae_min')
+
+
+def test_ipsae_warmup_is_at_least_ipsae_on_realistic_fixtures(multichain_pae):
+    """A more permissive cutoff cannot score lower than the tight one, on real AF2-shaped PAE."""
+    with open(os.path.join(FIXTURE_DIR, 'ipsae_pae.json')) as handle:
+        single_chain_pae = jnp.asarray(json.load(handle)['pae'])
+    single_chain_residues = single_chain_pae.shape[0]
+    single_chain = _metrics(_pae_bins_of(single_chain_pae), jnp.ones(single_chain_residues, dtype=jnp.float32),
+                            ('binder', 'target'), (12, single_chain_residues - 12))
+    multichain = _metrics(_pae_bins_of(multichain_pae), jnp.ones(70, dtype=jnp.float32),
+                          MULTICHAIN_CHAIN_NAMES, MULTICHAIN_CHAIN_LENGTHS)
+    for metrics in (single_chain, multichain):
+        assert float(metrics['ipsae_warmup']) >= float(metrics['ipsae'])
+
+
+def test_ipsae_warmup_is_strictly_greater_on_a_patch_between_the_two_cutoffs():
+    """Interface uniformly at PAE 20, which clears WARMUP_PAE_CUTOFF (30) but not
+    DEFAULT_PAE_CUTOFF (10). Everything else sits at 31.5, above even the warmup cutoff, so it
+    never contributes at either cutoff and can't confound the comparison."""
+    binder_residues, target_residues = 6, 10
+    residues = binder_residues + target_residues
+    chain_names, chain_lengths = ('binder', 'target'), (binder_residues, target_residues)
+    patch, elsewhere = _pae_bin(20.0), _pae_bin(31.5)
+    pae_bins = (jnp.full((residues, residues), elsewhere)
+                .at[:binder_residues, binder_residues:].set(patch)
+                .at[binder_residues:, :binder_residues].set(patch))
+    metrics = _metrics(pae_bins, jnp.ones(residues, dtype=jnp.float32), chain_names, chain_lengths)
+    assert float(metrics['ipsae']) == 0.0
+    assert float(metrics['ipsae_warmup']) > 0.0
+
+
+def test_ipsae_scored_fraction_is_zero_exactly_when_ipsae_is_zero():
+    """All interchain PAE above DEFAULT_PAE_CUTOFF (10): no pair clears it, so ipsae and the
+    fraction both read 0, which is the liveness indicator this metric exists for. The warmup
+    fraction stays alive (PAE 15 < 30) to show the two aren't wired together."""
+    binder_residues, target_residues = 6, 10
+    residues = binder_residues + target_residues
+    chain_names, chain_lengths = ('binder', 'target'), (binder_residues, target_residues)
+    pae_bins = jnp.full((residues, residues), _pae_bin(15.0))
+    metrics = _metrics(pae_bins, jnp.ones(residues, dtype=jnp.float32), chain_names, chain_lengths)
+    assert float(metrics['ipsae']) == 0.0
+    assert float(metrics['ipsae_scored_fraction']) == 0.0
+    assert float(metrics['ipsae_scored_fraction_warmup']) == 1.0
+
+
+def test_interface_scalars_read_both_pae_directions():
+    """PAE is asymmetric, so the fraction and the min must cover both the (binder, target) and
+    (target, binder) blocks, not just one. Forward block (binder->target) sits at 25 -- above
+    DEFAULT_PAE_CUTOFF -- while the reverse block (target->binder) sits at 4, well under it. A
+    fraction or min built from only one direction would miss the reverse block entirely."""
+    binder_residues, target_residues = 6, 10
+    residues = binder_residues + target_residues
+    chain_names, chain_lengths = ('binder', 'target'), (binder_residues, target_residues)
+    forward, reverse = _pae_bin(25.0), _pae_bin(4.0)
+    pae_bins = (jnp.full((residues, residues), forward)
+                .at[binder_residues:, :binder_residues].set(reverse))
+    metrics = _metrics(pae_bins, jnp.ones(residues, dtype=jnp.float32), chain_names, chain_lengths)
+    assert float(metrics['ipsae_scored_fraction']) == pytest.approx(0.5, abs=1e-6)
+    assert float(metrics['interface_pae_min']) == pytest.approx(float(jnp.take(_pae_centres(), jnp.asarray(reverse))), abs=1e-5)
+
+
+def test_a_binder_alone_state_reports_finite_observation_metrics():
+    """The one trap: no target chains means interface_pairs is all zero, so a naive masked min
+    or fraction guard produces NaN/inf. MPNN_stage averages every metric across models when
+    ensembling, so either would poison unrelated numbers. All four must stay finite."""
+    residues = 8
+    metrics = _metrics(jnp.full((residues, residues), _pae_bin(2.0)),
+                       jnp.ones(residues, dtype=jnp.float32), ('binder',), (residues,))
+    for name in OBSERVATION_ONLY_METRICS:
+        value = metrics[name]
+        assert bool(jnp.isfinite(value)), name
+    assert float(metrics['interface_pae_min']) == pytest.approx(float(metrics['pae'].max()), abs=1e-6)
+
+
+def test_observation_only_metrics_are_scalars(multichain_pae):
+    """trajectory_output.py:516 only records metrics with ndim == 0 into the per-step CSV; an
+    array-valued metric here would be silently dropped rather than loudly wrong."""
+    metrics = _metrics(_pae_bins_of(multichain_pae), jnp.ones(70, dtype=jnp.float32),
+                       MULTICHAIN_CHAIN_NAMES, MULTICHAIN_CHAIN_LENGTHS)
+    for name in OBSERVATION_ONLY_METRICS:
+        assert metrics[name].ndim == 0, name
+
+
+def test_observation_only_metrics_survive_jit_with_a_zero_row_target_mask():
+    """alphafold_prediction_metrics is traced under jax.jit in production. A zero-row target
+    mask (the binder-alone state) must not break tracing or produce NaN/inf under jit either."""
+    residues = 8
+    chain_names, chain_lengths = ('binder',), (residues,)
+    outputs = _pae_head(jnp.full((residues, residues), _pae_bin(2.0)))
+    seq_mask = jnp.ones(residues, dtype=jnp.float32)
+    binder_masks = chain_residue_masks(chain_names, chain_lengths, binder=True)
+    target_masks = chain_residue_masks(chain_names, chain_lengths, binder=False)
+    assert target_masks.shape[0] == 0
+
+    jitted = jax.jit(alphafold_prediction_metrics)
+    metrics = jitted(outputs, seq_mask, interface_asym_ids(chain_names, chain_lengths), binder_masks, target_masks)
+    for name in OBSERVATION_ONLY_METRICS:
+        value = metrics[name]
+        assert value.ndim == 0, name
+        assert bool(jnp.isfinite(value)), name

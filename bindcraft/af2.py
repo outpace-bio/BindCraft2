@@ -12,7 +12,7 @@ from bindcraft.af.alphafold.model import config as af_config, data as af_data, m
 from bindcraft.af import accel
 from bindcraft.prediction import DifferentiableProteinPredictor, CompiledModelCache, residue_chain_ids, concatenate_chain_arrays, collect_shared_chains, split_residue_arrays_by_chain
 from bindcraft.loss import DesignLoss, frozen_interface_arguments, renamed_loss_name, renamed_state_losses
-from bindcraft.ipsae import DEFAULT_PAE_CUTOFF, ipsae, ipsae_by_residue
+from bindcraft.ipsae import DEFAULT_PAE_CUTOFF, WARMUP_PAE_CUTOFF, ipsae, ipsae_by_residue
 from bindcraft.sequence_optimization import sequence_features_from_logits
 from bindcraft.protein import ATOM_INDEX, ATOM_NAMES, BINDER_ALONE, BINDER_CHAIN_PREFIX, StructurePrediction, StructurePredictions, Protein, ResidueFlags, ProteinStates, has_residue_flag, is_binder_chain, is_target_chain, kabsch, real_residue_weights
 
@@ -190,6 +190,30 @@ def alphafold_prediction_metrics(alphafold_outputs: dict, seq_mask: Array, inter
         #pooled on purpose: one value per binder residue across every binder chain, which is the
         #shape sequence_optimization's interface_ipsae mutation weighting consumes
         metrics['ipsae_per_residue'] = ipsae_by_residue(pae, real_binder_chains.sum(0), real_target_chains.sum(0), DEFAULT_PAE_CUTOFF)
+        #Observation only: ipsae_loss anneals its cutoff from WARMUP_PAE_CUTOFF down to
+        #DEFAULT_PAE_CUTOFF as the sequence hardens, so at trajectory start the loss sees a far
+        #more permissive score than metrics['ipsae'] above. Nothing here gates, filters or
+        #optimizes on these four values; they exist purely so a run can show ipSAE and ipTM
+        #evolving together with the ipSAE loss weight at 0.
+        #same per-chain-pair max reduction as metrics['ipsae'], but at the permissive cutoff
+        chain_pair_scores_warmup = [ipsae(pae, real_binder_chains[binder_index], real_target_chains[target_index], WARMUP_PAE_CUTOFF)
+                             for binder_index in range(real_binder_chains.shape[0]) for target_index in range(real_target_chains.shape[0])]
+        metrics['ipsae_warmup'] = jnp.stack(chain_pair_scores_warmup).max() if chain_pair_scores_warmup else jnp.asarray(0.0)
+        #both directions over the POOLED chains -- unlike ipsae/ipsae_warmup above, these three
+        #are not chain-pair reductions, so pooling binder and target separately is enough
+        interface_pairs = real_binder_chains.sum(0)[:, None] * real_target_chains.sum(0)[None, :]
+        interface_pairs = interface_pairs + interface_pairs.T
+        total_interface_pairs = jnp.maximum(interface_pairs.sum(), 1.0)
+        #0.0 exactly when no interchain pair clears the cutoff, which is exactly when
+        #metrics['ipsae'] is 0 and the loss gradient would be identically 0: this fraction is
+        #the liveness indicator for that condition
+        metrics['ipsae_scored_fraction'] = (interface_pairs * (pae < DEFAULT_PAE_CUTOFF)).sum() / total_interface_pairs
+        metrics['ipsae_scored_fraction_warmup'] = (interface_pairs * (pae < WARMUP_PAE_CUTOFF)).sum() / total_interface_pairs
+        #a binder-alone state has no target chains, so interface_pairs is all zero and the
+        #masked min below is +inf; clamp to the worst PAE present instead of leaking a NaN/inf
+        #sentinel into MPNN_stage's cross-model averaging
+        best_interface_pae = jnp.where(interface_pairs > 0, pae, jnp.inf).min()
+        metrics['interface_pae_min'] = jnp.minimum(best_interface_pae, pae.max())
     if 'experimentally_resolved' in alphafold_outputs:
         metrics['experimentally_resolved_ca'] = jax.nn.sigmoid(alphafold_outputs['experimentally_resolved']['logits'][:, ATOM_INDEX['CA']])
     if 'distogram' in alphafold_outputs:

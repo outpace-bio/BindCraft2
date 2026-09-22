@@ -95,7 +95,15 @@ def ensemble_mean_predictions(protein_states: ProteinStates, model_predictions: 
         predictions[name] = StructurePrediction(protein_complex=next(iter(model_predictions.values()))[name].protein_complex, metrics=metrics)
     return predictions
 
-REACHABLE_CONFIDENCE_BOUNDS = {'plddt': (0.0, 1.0), 'ptm': (0.0, 1.0), 'iptm': (0.0, 1.0), 'ipsae': (0.0, 1.0), 'pae': (0.0, 0.0)}
+#ipsae_warmup is the same [0, 1] score family as ipsae, just at a more permissive cutoff, so it
+#gets the same bound. The other three observation-only ipSAE scalars (ipsae_scored_fraction,
+#ipsae_scored_fraction_warmup, interface_pae_min) are deliberately left out: the fractions are
+#a coverage/liveness signal rather than a confidence a filter should push toward an extreme, and
+#interface_pae_min is a PAE value in Angstroms (~0-32), not a [0, 1] quantity, so (0.0, 1.0)
+#would be a wrong bound rather than a conservative one. Nothing here should gate, filter or
+#optimize on them; leaving them unbounded keeps them outside best_reachable_ensemble's optimistic
+#imputation instead of quietly wiring them into it.
+REACHABLE_CONFIDENCE_BOUNDS = {'plddt': (0.0, 1.0), 'ptm': (0.0, 1.0), 'iptm': (0.0, 1.0), 'ipsae': (0.0, 1.0), 'ipsae_warmup': (0.0, 1.0), 'pae': (0.0, 0.0)}
 
 def best_reachable_ensemble(model_predictions: dict[str, StructurePredictions], model_count: int, higher: bool) -> StructurePredictions:
     folded = list(model_predictions.values())

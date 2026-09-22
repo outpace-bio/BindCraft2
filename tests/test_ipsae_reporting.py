@@ -33,6 +33,23 @@ def test_ipsae_has_a_quality_metric_type_and_an_ensemble_bound():
     assert REACHABLE_CONFIDENCE_BOUNDS['ipsae'] == (0.0, 1.0)
 
 
+def test_ipsae_warmup_shares_ipsaes_ensemble_bound():
+    """ipsae_warmup is the same [0, 1] score family as ipsae, just at a more permissive cutoff,
+    so best_reachable_ensemble should treat missing values the same way for both."""
+    assert REACHABLE_CONFIDENCE_BOUNDS['ipsae_warmup'] == (0.0, 1.0)
+
+
+def test_the_other_observation_only_ipsae_scalars_have_no_ensemble_bound():
+    """ipsae_scored_fraction(_warmup) and interface_pae_min are observation-only: nothing gates,
+    filters or optimizes on them, so they must stay outside best_reachable_ensemble's optimistic
+    imputation rather than being silently wired into it. interface_pae_min is also not a [0, 1]
+    quantity in the first place -- it is a PAE value in Angstroms -- so (0.0, 1.0) would be an
+    outright wrong bound for it, not merely an unnecessary one."""
+    assert 'ipsae_scored_fraction' not in REACHABLE_CONFIDENCE_BOUNDS
+    assert 'ipsae_scored_fraction_warmup' not in REACHABLE_CONFIDENCE_BOUNDS
+    assert 'interface_pae_min' not in REACHABLE_CONFIDENCE_BOUNDS
+
+
 # ---------------------------------------------------------------------------
 # Mutation weighting (Half B): interface_confidence_weights must actually read
 # whichever per-residue metric its `metric` argument names, not a hardcoded
