@@ -385,12 +385,12 @@ def annealed_pae_cutoff(sequence_hardness: Array, pae_cutoff: float, warmup_cuto
     At the paper's cutoff of 10 a step-0 trajectory sits near PAE 30, no pair passes the mask,
     ipSAE is identically zero and so is its gradient. sequence_hardness is the mean maximum
     amino-acid probability, so it runs from 1/20 on a uniform sequence to 1 on a discrete one,
-    which tracks screen through harden without threading a step count into the loss."""
+    which tracks how far the sequence has hardened without threading a step count into the loss."""
     return warmup_cutoff - (warmup_cutoff - pae_cutoff) * jnp.clip((sequence_hardness - 1.0 / len(AMINO_ACIDS)) / (1.0 - 1.0 / len(AMINO_ACIDS)), 0.0, 1.0)
 
 
 @loss('ipsae_loss', target_weighting='binds_target')
-def ipsae_loss(protein_states: ProteinStates, predictions: StructurePredictions, prediction_state: str='complex', binder: str='binder', pae_cutoff: float=10.0, warmup_cutoff: float=30.0, temperature: float=0.1) -> Array:
+def ipsae_loss(protein_states: ProteinStates, predictions: StructurePredictions, prediction_state: str='complex', pae_cutoff: float=10.0, warmup_cutoff: float=30.0, temperature: float=0.1) -> Array:
     prediction_state = resolve_prediction_state(predictions, prediction_state)
     protein_complex = protein_states[prediction_state]
     binder_chains = [name for name in sorted(protein_complex) if is_binder_chain(name)]
