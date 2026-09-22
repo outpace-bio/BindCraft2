@@ -178,9 +178,10 @@ Detargeting only checks the off-targets supplied. Use `targets[].objective: "det
 | --- | --- | --- |
 | `multitarget_steps` | 1 | Updates per target slot in a rotation. |
 | `multitarget_swap_threshold`, `multitarget_swap_patience` | 0.5, 20 | Interface-confidence goal and maximum wait before leaving a binding target. |
-| `multitarget_swap_metric` | `iptm` | `iptm` (default) or `ipsae`; which confidence drives multitarget swaps and detarget exits. Switching this invalidates `multitarget_swap_threshold`, which is calibrated against ipTM. |
+| `multitarget_swap_metric` | `iptm` | `iptm` (default) or `ipsae`; which confidence drives multitarget swaps and detarget exits. Switching this invalidates both `multitarget_swap_threshold` and `max_detarget_iptm`, which are calibrated against ipTM; ipSAE runs an order of magnitude lower, so set `multitarget_swap_threshold` and `max_detarget_ipsae` to match. |
 | `multitarget_warmup_patience` | Unset | Use a separate patience limit during the first visit to a target. |
-| `max_detarget_iptm` | 0.4 | Stop a detarget visit once its interface confidence falls this low. This is not an acceptance filter. |
+| `max_detarget_iptm` | 0.4 | Stop a detarget visit once its interface confidence falls this low. Read only when `multitarget_swap_metric` is `iptm`. This is not an acceptance filter. |
+| `max_detarget_ipsae` | 0.4 | The same ceiling for `multitarget_swap_metric: ipsae`. The 0.4 default is the ipTM number and is far too permissive for ipSAE, which typically runs below 0.1, so an unset value ends every detarget visit on its first round. Set it explicitly. |
 | `detarget_check_interval`, `max_detarget_rounds` | 10, 10 | How often to revisit off-targets, and the maximum updates spent on one check. |
 | `multitarget_best_round` | false | Pass onward the last round that cleared every state's stage checks, rather than simply the last round. |
 | `multitarget_cumulative_filter` | true for multiple states | Use each target's best round when evaluating the stage. |

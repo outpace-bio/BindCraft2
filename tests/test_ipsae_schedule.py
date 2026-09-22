@@ -64,3 +64,59 @@ def test_the_swap_decision_follows_the_configured_metric():
     by_ipsae.select_protein_states({'a': {}, 'b': {}}, confident_by_iptm_only)
     assert by_ipsae.active_target_index == 0
     assert by_ipsae.iterations_on_target == 1
+
+
+from bindcraft.settings import BinderDesignSettings, BinderSettings, TargetSettings
+from bindcraft.target_schedule import build_target_schedule, objective_gated_reached
+
+
+def _built_schedule(settings):
+    """build_target_schedule off a real BinderDesignSettings, with one on- and one off-target.
+
+    This covers the settings reads at build_target_schedule itself, which nothing else drives:
+    hardcoding confidence_metric='iptm' there used to leave the whole suite green."""
+    design_settings = BinderDesignSettings(
+        targets=[TargetSettings('on', 'on.pdb', weight=1.0), TargetSettings('off', 'off.pdb', weight=-1.0)],
+        binder=BinderSettings(lengths=(50,)), settings=settings)
+    target_states = {state.name: {state.target_chain: object()} for state in design_settings.prepared_states}
+    return build_target_schedule(design_settings, target_states, 100, 'screen')
+
+
+def test_build_target_schedule_reads_the_swap_metric():
+    assert _built_schedule({}).confidence_metric == 'iptm'
+    assert _built_schedule({'multitarget_swap_metric': 'ipsae'}).confidence_metric == 'ipsae'
+
+
+def test_an_ipsae_campaign_gets_the_ipsae_detarget_ceiling():
+    """max_detarget_ipsae was registered and asserted by a test but nothing read it: the
+    schedule hardcoded max_detarget_iptm."""
+    schedule = _built_schedule({'multitarget_swap_metric': 'ipsae', 'max_detarget_ipsae': 0.05, 'max_detarget_iptm': 0.4})
+    assert schedule.max_detarget_confidence == 0.05
+
+
+def test_an_iptm_campaign_still_gets_the_iptm_detarget_ceiling():
+    schedule = _built_schedule({'multitarget_swap_metric': 'iptm', 'max_detarget_iptm': 0.35, 'max_detarget_ipsae': 0.05})
+    assert schedule.max_detarget_confidence == 0.35
+
+
+def test_the_detarget_ceiling_defaults_are_unchanged():
+    """The safety promise: a campaign with no ipSAE settings behaves exactly as it did."""
+    schedule = _built_schedule({})
+    assert schedule.confidence_metric == 'iptm'
+    assert schedule.max_detarget_confidence == 0.4
+
+
+def test_an_ipsae_detarget_visit_is_decided_against_the_ipsae_ceiling():
+    """The defect this fixes. ipSAE runs an order of magnitude below ipTM, so an ipTM ceiling
+    of 0.4 is met on the very first round of every detarget visit and detargeting silently
+    stops happening. With the ipSAE ceiling wired, a binder still on the off-target holds the
+    visit and one that has come off releases it."""
+    schedule = _built_schedule({'multitarget_swap_metric': 'ipsae', 'max_detarget_ipsae': 0.05, 'max_detarget_iptm': 0.4})
+    assert objective_gated_reached(schedule, 'detarget', 0.30, 0.0) is False
+    assert objective_gated_reached(schedule, 'detarget', 0.04, 0.0) is True
+
+
+def test_an_iptm_detarget_visit_keeps_its_old_decision():
+    schedule = _built_schedule({'max_detarget_iptm': 0.4})
+    assert objective_gated_reached(schedule, 'detarget', 0.55, 0.0) is False
+    assert objective_gated_reached(schedule, 'detarget', 0.30, 0.0) is True
