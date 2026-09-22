@@ -15,7 +15,7 @@ def build_target_schedule(design_settings: BinderDesignSettings, target_states: 
         return FixedTargetSchedule(iterations)
     target_objectives = {state.name: state.objective for state in design_settings.prepared_states}
     epitope_rotation_interval = design_model_count(settings) if int(settings.get('idr_crop_count', 1)) > 1 else None
-    return MultitargetSchedule(targets, target_objectives, iterations, iptm_threshold=settings.get('multitarget_swap_threshold', 0.5), swap_patience=settings.get('multitarget_swap_patience', 20), warmup_swap_patience=settings.get('multitarget_warmup_patience'), target_chain=target_chain, epitope_rotation_interval=epitope_rotation_interval, merged_target_gradients=merged_gradient_targets(design_settings, design_stage) > 1, max_detarget_iptm=settings.get('max_detarget_iptm', 0.4), detarget_check_interval=settings.get('detarget_check_interval', DEFAULT_DETARGET_CHECK_INTERVAL), max_detarget_rounds=settings.get('max_detarget_rounds', 10), max_detarget_interface_residues=settings.get('max_detarget_interface_residues_final', DEFAULT_DETARGET_INTERFACE_RESIDUES))
+    return MultitargetSchedule(targets, target_objectives, iterations, iptm_threshold=settings.get('multitarget_swap_threshold', 0.5), confidence_metric=settings.get('multitarget_swap_metric', 'iptm'), swap_patience=settings.get('multitarget_swap_patience', 20), warmup_swap_patience=settings.get('multitarget_warmup_patience'), target_chain=target_chain, epitope_rotation_interval=epitope_rotation_interval, merged_target_gradients=merged_gradient_targets(design_settings, design_stage) > 1, max_detarget_iptm=settings.get('max_detarget_iptm', 0.4), detarget_check_interval=settings.get('detarget_check_interval', DEFAULT_DETARGET_CHECK_INTERVAL), max_detarget_rounds=settings.get('max_detarget_rounds', 10), max_detarget_interface_residues=settings.get('max_detarget_interface_residues_final', DEFAULT_DETARGET_INTERFACE_RESIDUES))
 
 def build_design_schedule(design_settings: BinderDesignSettings, target_states: ProteinStates, losses: dict[str, DesignLoss], iterations: int, conformation_random_key: Array, induced_fit_active: bool=True, target_schedule: 'IterationLimitedDesignSchedule | None'=None, design_stage: str=MERGED_GRADIENT_STAGE) -> 'DesignSchedule':
     settings = design_settings.settings
@@ -125,12 +125,13 @@ FIXED_CADENCE = TargetTransition('fixed cadence', fixed_cadence_reached)
 OBJECTIVE_GATED = TargetTransition('objective gated', objective_gated_reached)
 
 class MultitargetSchedule(IterationLimitedDesignSchedule):
-    def __init__(self, targets: dict[str, Protein], target_objectives: dict[str, str], iterations: int, iptm_threshold: float=0.5, swap_patience: int=20, warmup_swap_patience: int | None=None, target_chain: str='target', epitope_rotation_interval: int | None=None, merged_target_gradients: bool=False, max_detarget_iptm: float=0.4, detarget_check_interval: int=1, max_detarget_rounds: int=10, max_detarget_interface_residues: float | None=3):
+    def __init__(self, targets: dict[str, Protein], target_objectives: dict[str, str], iterations: int, iptm_threshold: float=0.5, swap_patience: int=20, warmup_swap_patience: int | None=None, target_chain: str='target', epitope_rotation_interval: int | None=None, merged_target_gradients: bool=False, max_detarget_iptm: float=0.4, detarget_check_interval: int=1, max_detarget_rounds: int=10, max_detarget_interface_residues: float | None=3, confidence_metric: str='iptm'):
         super().__init__(iterations)
         self.epitope_rotation_interval = None if epitope_rotation_interval is None else max(1, int(epitope_rotation_interval))
         self.target_entries = [(target_name, target, target_objectives[target_name]) for target_name, target in targets.items()]
         self.target_chain = target_chain
         self.iptm_threshold = iptm_threshold
+        self.confidence_metric = confidence_metric
         self.swap_patience = swap_patience
         self.warmup_swap_patience = swap_patience if warmup_swap_patience is None else warmup_swap_patience
         self.active_target_index = 0
@@ -174,8 +175,8 @@ class MultitargetSchedule(IterationLimitedDesignSchedule):
         if predictions is None or target_name not in predictions:
             return
         self.latest_stage_predictions[target_name] = predictions[target_name]
-        peak, interface_confidence = (self.stage_peak_predictions.get(target_name), predictions[target_name].metrics['iptm'])
-        if peak is None or (interface_confidence < peak.metrics['iptm'] if objective == 'detarget' else interface_confidence > peak.metrics['iptm']):
+        peak, interface_confidence = (self.stage_peak_predictions.get(target_name), predictions[target_name].metrics[self.confidence_metric])
+        if peak is None or (interface_confidence < peak.metrics[self.confidence_metric] if objective == 'detarget' else interface_confidence > peak.metrics[self.confidence_metric]):
             self.stage_peak_predictions[target_name] = predictions[target_name]
 
     def should_update_sequence(self, protein_states: ProteinStates, predictions: StructurePredictions, accumulated_gradients: dict[str, list[Array]]) -> bool:
@@ -216,7 +217,7 @@ class MultitargetSchedule(IterationLimitedDesignSchedule):
         target_name, _, objective = self.target_entries[self.active_target_index]
         if predictions is not None and target_name in predictions:
             self.record_stage_peak(predictions)
-            interface_confidence = float(predictions[target_name].metrics['iptm'])
+            interface_confidence = float(predictions[target_name].metrics[self.confidence_metric])
             #only an off-target is decided on contact, and only its own rounds pay for measuring it
             interface_residues = float(interface_residues_metric(protein_states, predictions, target_name, target=self._target_chain_name(target_name))) if objective == 'detarget' else 0.0
             self._count_round_towards_detarget_visit(objective)
