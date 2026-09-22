@@ -1,3 +1,5 @@
+import pytest
+
 from bindcraft.settings import CAMPAIGN_SETTING_NAMES, FINAL_CONFIDENCE_FILTERS, known_campaign_settings
 
 
@@ -92,3 +94,40 @@ def test_design_stage_filters_sets_ipsae_polarity_and_threshold_per_state():
     detarget = stage_filters['i_pSAE.offtarget']
     assert detarget.higher is False
     assert detarget.threshold == 0.3
+
+
+import jax.numpy as jnp
+
+from bindcraft.protein import StructurePrediction
+
+
+def test_stage_filters_evaluate_with_ipsae_loss_params_configured():
+    """Regression: the ipSAE stage filter used to be bound from `losses.ipsae_loss.params`.
+
+    ipsae_loss carries pae_cutoff, warmup_cutoff and temperature; ipsae_metric accepts none of
+    them, so a campaign that tuned the loss validated at load and then died at the first filter
+    evaluation with "ipsae_metric() got an unexpected keyword argument 'temperature'". The stage
+    filter is built unconditionally, so it fired even with no ipSAE threshold and the loss at
+    weight 0."""
+    design_settings = _Settings(
+        {'losses': {'ipsae_loss': {'weight': 0.0,
+                                   'params': {'pae_cutoff': 8.0, 'warmup_cutoff': 25.0, 'temperature': 0.2}}}},
+        prepared_states=(_State('complex', 'target'),),
+    )
+    protein_states = {'complex': {}}
+    predictions = {'complex': StructurePrediction(protein_complex={},
+                                                  metrics={'iptm': jnp.asarray(0.7), 'ipsae': jnp.asarray(0.12)})}
+    stage_filters = design_stage_filters(design_settings, protein_states, 'harden', plddt=False)
+    assert stage_filters['i_pSAE'].function(protein_states, predictions) == pytest.approx(0.12, abs=1e-6)
+    assert stage_filters['i_pTM'].function(protein_states, predictions) == pytest.approx(0.7, abs=1e-6)
+
+
+def test_stage_filters_evaluate_with_iptm_loss_params_configured():
+    """The ipTM twin of the regression above, so the pattern stays pinned on both blocks."""
+    design_settings = _Settings({'losses': {'iptm_loss': {'weight': 1.0, 'params': {}}}},
+                                prepared_states=(_State('complex', 'target'),))
+    protein_states = {'complex': {}}
+    predictions = {'complex': StructurePrediction(protein_complex={},
+                                                  metrics={'iptm': jnp.asarray(0.7), 'ipsae': jnp.asarray(0.12)})}
+    stage_filters = design_stage_filters(design_settings, protein_states, 'harden', plddt=False)
+    assert stage_filters['i_pTM'].function(protein_states, predictions) == pytest.approx(0.7, abs=1e-6)

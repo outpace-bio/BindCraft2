@@ -831,8 +831,11 @@ def design_stage_filters(design_settings: 'BinderDesignSettings', protein_states
         if ipsae and state_name != BINDER_ALONE:
             is_detarget = state_name in detarget_states
             threshold = settings.get(f'max_detarget_ipsae_{stage}' if is_detarget else f'min_ipsae_{stage}')
-            entry = settings.get('losses', {}).get('ipsae_loss', {})
-            bound_metric, required_states = bind_state_metric(ipsae_metric, {**entry, 'prediction_state': state_name})
+            #losses.ipsae_loss.params is NOT forwarded: ipsae_loss carries pae_cutoff, warmup_cutoff
+            #and temperature, none of which ipsae_metric accepts, so forwarding them crashes every
+            #stage filter evaluation. The iptm block above is safe only because iptm_loss and
+            #iptm_metric take the same parameters.
+            bound_metric, required_states = bind_state_metric(ipsae_metric, {'prediction_state': state_name})
             stage_filters[state_filter_name('i_pSAE', state_name, complex_states)] = DesignFilter(bound_metric, None if threshold is None else float(threshold), not is_detarget, required_states, threshold is not None)
     if plddt and settings.get(f'min_plddt_{stage}') is not None:
         for target_name in target_states:
