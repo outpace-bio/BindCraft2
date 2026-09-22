@@ -19,6 +19,13 @@
 - Every new setting defaults to off: `weights_ipsae_loss = 0`, every `min_ipsae_*` and `max_detarget_ipsae*` unset, `multitarget_swap_metric = 'iptm'`.
 - Upstream reference script, used only by the golden test: `/home/bobbylangan/workdir/packages/IPSAE/ipsae.py`.
 - Branch: `explore/ipsae-instead-of-iptm`, off `dev`. Do not merge; the branch is reviewed as a whole.
+- **Interpreter: `/home/bobbylangan/.conda/envs/bindcraft2/bin/python`.** This box has 37 conda envs and the default `python` has no jax. Every command below uses `$PY`, so export it once per shell:
+
+  ```bash
+  export PY=/home/bobbylangan/.conda/envs/bindcraft2/bin/python
+  ```
+
+  That env holds jax 0.11.2 and an editable `bindcraft` pointing at this repo.
 
 ---
 
@@ -67,6 +74,16 @@ In `pyproject.toml`, inside the existing `[project.optional-dependencies]` block
 dev = ["pytest>=8"]
 ```
 
+Declaring it installs nothing, so install it into the env now:
+
+```bash
+export PY=/home/bobbylangan/.conda/envs/bindcraft2/bin/python
+$PY -m pip install 'pytest>=8'
+$PY -m pytest --version
+```
+
+Expected: a version at or above 8.
+
 - [ ] **Step 2: Write the fixture generator**
 
 Create `tests/fixtures/make_ipsae_fixture.py`. BindCraft2 writes no PAE json, so the golden test needs a synthetic model. The interface patch drives `n0res` from 23 to 28, which straddles the `d0` clamp at 26, and the two directions are deliberately asymmetric so the test catches any accidental symmetrization.
@@ -76,11 +93,11 @@ Create `tests/fixtures/make_ipsae_fixture.py`. BindCraft2 writes no PAE json, so
 
 Run from the repository root:
 
-    python tests/fixtures/make_ipsae_fixture.py
+    $PY tests/fixtures/make_ipsae_fixture.py
 
 Then re-derive the expected values with upstream ipsae.py v4:
 
-    python /home/bobbylangan/workdir/packages/IPSAE/ipsae.py \
+    $PY /home/bobbylangan/workdir/packages/IPSAE/ipsae.py \
         tests/fixtures/ipsae_pae.json tests/fixtures/ipsae_model.pdb 10 15
 
 and copy the ipSAE column of the two `asym` rows and the one `max` row into
@@ -138,8 +155,8 @@ if __name__ == '__main__':
 
 ```bash
 cd /home/bobbylangan/workdir/packages/BindCraft2
-python tests/fixtures/make_ipsae_fixture.py
-python /home/bobbylangan/workdir/packages/IPSAE/ipsae.py \
+$PY tests/fixtures/make_ipsae_fixture.py
+$PY /home/bobbylangan/workdir/packages/IPSAE/ipsae.py \
     "$PWD/tests/fixtures/ipsae_pae.json" "$PWD/tests/fixtures/ipsae_model.pdb" 10 15
 cat tests/fixtures/ipsae_model_10_15.txt
 ```
@@ -253,7 +270,7 @@ def test_by_residue_is_zero_outside_the_from_mask(fixture_pae, chain_masks):
 
 - [ ] **Step 5: Run the tests to verify they fail**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/test_ipsae.py -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/test_ipsae.py -v`
 Expected: collection error, `ModuleNotFoundError: No module named 'bindcraft.ipsae'`.
 
 - [ ] **Step 6: Write the module**
@@ -312,7 +329,7 @@ def soft_ipsae(pae: Array, binder_mask: Array, target_mask: Array, pae_cutoff: f
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/test_ipsae.py -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/test_ipsae.py -v`
 Expected: 8 passed.
 
 If `test_d0_matches_calc_d0_array_across_the_clamp` fails at index 2 with 1.0 instead of 1.0389, the clamp was written as a branch on `L > 27`. Re-read the Global Constraints.
@@ -381,7 +398,7 @@ def test_binder_mask_follows_chain_name_order_not_sorted_order():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/test_ipsae_metrics.py -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/test_ipsae_metrics.py -v`
 Expected: `ImportError: cannot import name 'binder_residue_mask' from 'bindcraft.af2'`.
 
 - [ ] **Step 3: Add the mask builder**
@@ -398,7 +415,7 @@ def binder_residue_mask(chain_names: tuple[str, ...], chain_lengths: tuple[int, 
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/test_ipsae_metrics.py -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/test_ipsae_metrics.py -v`
 Expected: 4 passed.
 
 - [ ] **Step 5: Thread the mask into the metrics function**
@@ -503,7 +520,7 @@ That test matters because padded PAE entries are zero, which is below any cutoff
 
 - [ ] **Step 8: Run the tests**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/ -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/ -v`
 Expected: 13 passed.
 
 - [ ] **Step 9: Confirm the ensemble path accepts the new metric**
@@ -512,7 +529,7 @@ Run:
 
 ```bash
 cd /home/bobbylangan/workdir/packages/BindCraft2
-python -c "
+$PY -c "
 from bindcraft.MPNN_stage import REACHABLE_CONFIDENCE_BOUNDS
 print('ipsae' in REACHABLE_CONFIDENCE_BOUNDS)
 "
@@ -573,7 +590,6 @@ def test_per_stage_ipsae_settings_are_known():
     for stage in ('screen', 'refine', 'anneal', 'harden', 'mutate', 'final'):
         assert f'min_ipsae_{stage}' in names
         assert f'max_detarget_ipsae_{stage}' in names
-    assert 'weights_ipsae_loss' in names
 
 
 def test_existing_iptm_settings_still_known():
@@ -586,7 +602,7 @@ def test_existing_iptm_settings_still_known():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/test_ipsae_filters.py -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/test_ipsae_filters.py -v`
 Expected: `KeyError: 'min_ipsae_final'`.
 
 - [ ] **Step 3: Register the metric**
@@ -694,7 +710,7 @@ If `undecided_avoidance` needs more of `BinderDesignSettings` than this stub pro
 
 - [ ] **Step 8: Run the tests**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/ -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/ -v`
 Expected: all pass.
 
 - [ ] **Step 9: Verify no existing campaign config broke**
@@ -702,7 +718,7 @@ Expected: all pass.
 ```bash
 cd /home/bobbylangan/workdir/packages/BindCraft2
 for f in settings/core/*.json settings/modality/*.json examples/*.json; do
-  python -c "
+  $PY -c "
 import json, sys
 from bindcraft.settings import known_campaign_settings
 names = known_campaign_settings()
@@ -757,6 +773,13 @@ def test_ipsae_loss_is_registered_and_targets_the_bound_state():
     assert LOSS_TARGET_WEIGHTING['ipsae_loss'] == 'binds_target'
 
 
+def test_registering_the_loss_makes_its_weight_a_known_setting():
+    """known_campaign_settings builds weights_* from REGISTERED_LOSSES, so this is only
+    true once the decorator above has run. Task 3 deliberately does not assert it."""
+    from bindcraft.settings import known_campaign_settings
+    assert 'weights_ipsae_loss' in known_campaign_settings()
+
+
 def test_ipsae_loss_is_off_by_default():
     assert 'ipsae_loss' not in build_losses({})
 
@@ -784,7 +807,7 @@ def test_a_wide_cutoff_scores_above_the_paper_cutoff_on_a_dispersed_interface():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/test_ipsae_loss.py -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/test_ipsae_loss.py -v`
 Expected: `ImportError: cannot import name 'annealed_pae_cutoff' from 'bindcraft.loss'`.
 
 - [ ] **Step 3: Write the loss**
@@ -847,8 +870,8 @@ def ipsae_loss(protein_states: ProteinStates, predictions: StructurePredictions,
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/test_ipsae_loss.py -v`
-Expected: 5 passed.
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/test_ipsae_loss.py -v`
+Expected: 6 passed.
 
 If `bindcraft.ipsae` importing `soft_maximum` from `bindcraft.loss` while `bindcraft.loss` imports `soft_ipsae` from `bindcraft.ipsae` raises a circular import, note that `soft_ipsae` does its import inside the function body for exactly that reason. Leave it there.
 
@@ -870,7 +893,7 @@ def test_the_loss_has_a_live_gradient_on_a_dispersed_interface():
     assert float(jnp.abs(gradient).sum()) > 0.0
 ```
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/ -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/ -v`
 Expected: all pass.
 
 - [ ] **Step 6: Commit**
@@ -925,7 +948,7 @@ def test_schedule_accepts_ipsae():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/test_ipsae_schedule.py -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/test_ipsae_schedule.py -v`
 Expected: `TypeError: __init__() got an unexpected keyword argument 'confidence_metric'`.
 
 - [ ] **Step 3: Add the field**
@@ -974,7 +997,7 @@ confidence_metric=settings.get('multitarget_swap_metric', 'iptm'),
 
 - [ ] **Step 6: Run the tests**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/ -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/ -v`
 Expected: all pass.
 
 - [ ] **Step 7: Commit**
@@ -1049,7 +1072,7 @@ def test_ipsae_has_a_quality_metric_type_and_an_ensemble_bound():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/test_ipsae_reporting.py -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/test_ipsae_reporting.py -v`
 Expected: `AssertionError` on the first test.
 
 - [ ] **Step 3: Add the column**
@@ -1156,15 +1179,15 @@ def test_both_interface_weightings_are_available():
 
 - [ ] **Step 6: Run the full suite**
 
-Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && python -m pytest tests/ -v`
+Run: `cd /home/bobbylangan/workdir/packages/BindCraft2 && $PY -m pytest tests/ -v`
 Expected: all pass.
 
 - [ ] **Step 7: Confirm the CLI still starts**
 
 ```bash
 cd /home/bobbylangan/workdir/packages/BindCraft2
-python -c "import bindcraft.cli, bindcraft.rank, bindcraft.score, bindcraft.campaign; print('imports clean')"
-python -m bindcraft.rank --help 2>&1 | grep -i "i_pSAE"
+$PY -c "import bindcraft.cli, bindcraft.rank, bindcraft.score, bindcraft.campaign; print('imports clean')"
+$PY -m bindcraft.rank --help 2>&1 | grep -i "i_pSAE"
 ```
 
 Expected: `imports clean`, then the two glossary lines mentioning `i_pSAE`. `rank.py:319` builds the glossary into the argparse epilog and only fills it in when `-h` or `--help` is present, so `--help` is the flag that prints it.
@@ -1218,7 +1241,7 @@ Beside the `i_pTM` entry, add:
 ```bash
 cd /home/bobbylangan/workdir/packages/BindCraft2
 grep -c "i_pSAE\|ipsae" docs/reference.md docs/outputs.md
-python -m pytest tests/ -q
+$PY -m pytest tests/ -q
 git add docs/
 git commit -m "Document the ipSAE settings and the i_pSAE column
 
@@ -1231,7 +1254,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ```bash
 cd /home/bobbylangan/workdir/packages/BindCraft2
-python -m pytest tests/ -v                  # every test green
+$PY -m pytest tests/ -v                  # every test green
 git log --oneline dev..HEAD                 # 7 implementation commits on top of the 2 spec commits
 git diff dev --stat
 grep -rn "min_iptm\|iptm_loss\|i_pTM" bindcraft/ --include='*.py' | grep -v 'af/alphafold' | wc -l
