@@ -139,3 +139,36 @@ def test_interface_weights_gating_also_recognizes_interface_ipsae():
     shared_chains = {'binder': _chain_protein(2, [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)])}
     weights = sampler.interface_weights(('binder',), shared_chains)
     assert jnp.allclose(weights, jnp.asarray([2.0, 0.5]))
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1: interface_ipsae was fully functional but unreachable from a real
+# campaign -- nothing wired the 'mutation_weighting' setting through to the
+# SemigreedySequenceSampler that run_mutation_polish (bindcraft/trajectory.py)
+# actually constructs. Reaching that call site through run_mutation_polish itself
+# needs a full DifferentiableProteinPredictor and a real sequence-mutation stage
+# (heavy machinery), so this tests bindcraft.trajectory.resolved_mutation_weighting
+# directly -- the exact expression run_mutation_polish now calls at its
+# SemigreedySequenceSampler construction site, extracted verbatim rather than
+# duplicated, so a change to the real logic cannot drift out of sync with the test.
+# ---------------------------------------------------------------------------
+
+from bindcraft.settings import known_campaign_settings
+from bindcraft.trajectory import resolved_mutation_weighting
+
+
+def test_mutation_weighting_default_preserves_todays_behavior():
+    """The safety test: with no 'mutation_weighting' set, single-target campaigns must
+    still get 'interface_iptm' and multi-target campaigns must still get 'plddt' --
+    bit-for-bit what run_mutation_polish did before this setting existed."""
+    assert resolved_mutation_weighting({}, 1) == 'interface_iptm'
+    assert resolved_mutation_weighting({}, 2) == 'plddt'
+
+
+def test_mutation_weighting_setting_makes_interface_ipsae_reachable():
+    assert resolved_mutation_weighting({'mutation_weighting': 'interface_ipsae'}, 1) == 'interface_ipsae'
+    assert resolved_mutation_weighting({'mutation_weighting': 'interface_ipsae'}, 2) == 'interface_ipsae'
+
+
+def test_mutation_weighting_is_a_known_campaign_setting():
+    assert 'mutation_weighting' in known_campaign_settings()

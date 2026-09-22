@@ -255,6 +255,11 @@ def judge_stage(trajectory: TrajectoryState, design_settings: BinderDesignSettin
     filter_result, measured = evaluate_design_filters(stage_filters, trajectory.protein_states, filter_predictions) if stage_filters else (True, {})
     return (trajectory if filter_result is True else trajectory._replace(predictions=filter_predictions, failed=tuple(filter_result))), measured
 
+def resolved_mutation_weighting(settings: dict, prepared_state_count: int) -> str:
+    """Today's plddt/interface_iptm split by target count, overridable by the
+    'mutation_weighting' campaign setting (e.g. to 'interface_ipsae')."""
+    return settings.get('mutation_weighting') or ('plddt' if prepared_state_count > 1 else 'interface_iptm')
+
 def run_mutation_polish(design_settings: BinderDesignSettings, design_model: DifferentiableProteinPredictor, protein_states: ProteinStates, wild_type_states: ProteinStates, losses: dict[str, DesignLoss], binder_alone_reference: StructurePrediction | None, multi_chain_binders: tuple[tuple[str, ...], ...], mutation_random_key: Array, conformation_random_key: Array, target_names: tuple[str, ...], recorder: TrajectoryRecorder | None) -> tuple[ProteinStates, StructurePredictions, str | None]:
     settings = design_settings.settings
     mutate_steps = design_stage_rounds(settings)['mutate']
@@ -262,7 +267,7 @@ def run_mutation_polish(design_settings: BinderDesignSettings, design_model: Dif
         recorder.design_stage = 'mutate'
     design_model.dropout = False
     #pLDDT weighting, for multitargeting
-    mutation_sampler = SemigreedySequenceSampler(key=mutation_random_key, multi_chain_binders=multi_chain_binders, mutation_weighting='plddt' if len(design_settings.prepared_states) > 1 else 'interface_iptm')
+    mutation_sampler = SemigreedySequenceSampler(key=mutation_random_key, multi_chain_binders=multi_chain_binders, mutation_weighting=resolved_mutation_weighting(settings, len(design_settings.prepared_states)))
     design_schedule = build_design_schedule(design_settings, wild_type_states, losses, mutate_steps, conformation_random_key, False)
     if len(design_settings.prepared_states) > 1:
         protein_states = transfer_binder_sequences(wild_type_states, protein_states)
