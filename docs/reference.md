@@ -121,7 +121,9 @@ Stage checks run after `screen`, `refine`, `anneal`, `harden`, `mutate` and `fin
 | `trajectory_only` | false | Explore gradient designs without ProteinMPNN acceptance; specify an attempt limit. |
 | `min_plddt_<stage>` | 0.6 screen/refine/mutate; 0.65 anneal/harden; 0.7 final | Require binder confidence at each stage. |
 | `min_iptm_<stage>` | Unset screen/refine; 0.5 anneal/harden/mutate; 0.7 final | Require interface confidence for binding targets. |
+| `min_ipsae_<stage>` | Unset | Minimum ipSAE (Dunbrack 2025) for the stage. ipSAE is far stricter than ipTM on small interfaces, so a threshold copied across from `min_iptm_*` will reject almost everything. |
 | `max_detarget_iptm_<stage>` | Unset | Reject attempts that retain too much confidence on an off-target. |
+| `max_detarget_ipsae_<stage>` | Unset | ipSAE ceiling an off-target state must stay under. |
 | `max_detarget_interface_residues_final` | 3 with an off-target | Reject an accepted design that still holds an off-target, counted in binder residues touching it. Interface confidence alone does not decide this: a peptide can read 0.27 `i_pTM` with its whole face on the off-target. |
 | `betasheet_reopt_trigger` | 0.15 | Sheet fraction at screen that activates extra optimisation below. |
 | `betasheet_reopt_extra_refine_steps`, `betasheet_reopt_extra_anneal_steps` | 0, 0 | Give sheet-rich designs extra updates. |
@@ -142,6 +144,7 @@ Replace `<stage>` with any of the six stage names above. Presets can change stag
 | `enough_passing_sequences` | 3 | Stop drawing after this many candidates pass; raise to evaluate more alternatives. |
 | `kept_sequences` | 1 | Retain the best passing candidates by `i_pDAE`. |
 | `redesign_interface` | false | Allow ProteinMPNN to change interface residues instead of holding the designed interface fixed. |
+| `mutation_weighting` | `plddt` for multi-state; `interface_iptm` otherwise | Overrides how the mutation-polish stage weights residues. Set it to `interface_ipsae` to weight by per-residue ipSAE instead. |
 | `mpnn_model` | `v_48_020` | Select the checkpoint filename stem in the chosen weight family. |
 | `mpnn_variant` | `negative` | Surface-charge preference: `neutral`, `negative` or `positive`. |
 | `mpnn_fix_linker` | true | Preserve linker residues identified by a multidomain design during redesign. |
@@ -175,6 +178,7 @@ Detargeting only checks the off-targets supplied. Use `targets[].objective: "det
 | --- | --- | --- |
 | `multitarget_steps` | 1 | Updates per target slot in a rotation. |
 | `multitarget_swap_threshold`, `multitarget_swap_patience` | 0.5, 20 | Interface-confidence goal and maximum wait before leaving a binding target. |
+| `multitarget_swap_metric` | `iptm` | `iptm` (default) or `ipsae`; which confidence drives multitarget swaps and detarget exits. Switching this invalidates `multitarget_swap_threshold`, which is calibrated against ipTM. |
 | `multitarget_warmup_patience` | Unset | Use a separate patience limit during the first visit to a target. |
 | `max_detarget_iptm` | 0.4 | Stop a detarget visit once its interface confidence falls this low. This is not an acceptance filter. |
 | `detarget_check_interval`, `max_detarget_rounds` | 10, 10 | How often to revisit off-targets, and the maximum updates spent on one check. |
@@ -274,6 +278,7 @@ The table lists every objective. Default weights describe the standard binder be
 | `weights_interface_pae` | 0.1 | Confidence in the binder–target pose. |
 | `weights_compactness` | 0.5 | Binder radius of gyration relative to a globular protein of its length. |
 | `weights_iptm_loss` | 0.05 | Interface confidence for binding targets. |
+| `weights_ipsae_loss` | 0 | Weight on the ipSAE design loss. The loss anneals its PAE cutoff from 30 to 10 as the sequence hardens, because at a fixed cutoff of 10 it has no gradient at the start of a trajectory. |
 | `weights_ptm_loss` | off | Confidence in the entire complex as one structure. |
 | `weights_target_rmsd` | off | Keep the target close to the supplied coordinates. |
 | `weights_target_rigidity` | off | Keep a receptor assembly’s chains in their supplied arrangement. |
