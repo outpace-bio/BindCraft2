@@ -1,0 +1,5 @@
+{
+  "campaign_name": "ipsae_ab_arm_b_ipsae",
+  "weights_iptm_loss": 0.0,
+  "weights_ipsae_loss": 0.02
+}

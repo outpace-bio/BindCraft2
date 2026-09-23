@@ -1,0 +1,11 @@
+{
+  "target": "hPDL1",
+  "binder_lengths": [60, 60],
+  "max_trajectories": 3,
+  "number_of_final_designs": 3,
+  "campaign_seed": 20260923,
+  "weights_iptm_loss": 0.0,
+  "weights_ipsae_loss": 0.025,
+  "gpu_ids": [0, 1],
+  "project_folder": "results/ipsae_calib/w_0025"
+}
