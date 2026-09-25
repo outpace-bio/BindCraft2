@@ -1,3 +1,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+
+# campaign output: a single run writes hundreds of MB of structures and per-step CSVs
+results/
+.superpowers/
