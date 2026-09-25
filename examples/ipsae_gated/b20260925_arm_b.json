@@ -1,0 +1,19 @@
+{
+  "target": "hPDL1",
+  "binder_lengths": [60, 60],
+  "max_trajectories": 32,
+  "trajectory_only": true,
+  "campaign_seed": 20260925,
+  "weights_iptm_loss": 0.0,
+  "weights_ipsae_loss": 0.05,
+  "min_iptm_anneal": null,
+  "min_iptm_harden": null,
+  "min_iptm_mutate": null,
+  "min_ipsae_anneal": 0.15,
+  "min_ipsae_harden": 0.15,
+  "min_ipsae_mutate": 0.15,
+  "min_ipsae_final": 0.35,
+  "filters": { "i_pTM": { "threshold": null } },
+  "gpu_ids": [0, 1],
+  "project_folder": "results/ipsae_gated/b20260925_arm_b"
+}

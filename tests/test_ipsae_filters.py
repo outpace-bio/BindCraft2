@@ -35,10 +35,27 @@ def test_min_ipsae_final_builds_a_working_filter():
     assert settings['filters']['i_pSAE'].get('higher', True) is True
 
 
-def test_ipsae_final_filter_is_inert_by_default():
-    """ipSAE must gate nothing unless a campaign asks. A null threshold is skipped."""
+def test_the_default_final_gate_is_ipsae_not_iptm():
+    """Policy as of 2026-09-24: a 256-trajectory A/B found ipSAE a worse design objective
+    than ipTM but a better final filter, so the default acceptance gate is i_pSAE 0.7 and
+    i_pTM is reported without a threshold. 0.7 is the highest cut that keeps every
+    Octet-confirmed GPC3 binder (lowest 0.757) while nearly doubling precision over 0.5."""
     from bindcraft.settings import load_settings
-    assert load_settings({})['filters']['i_pSAE']['threshold'] is None
+    from bindcraft.filters import build_filters
+    settings = load_settings({})
+    assert settings['filters']['i_pSAE']['threshold'] == 0.7
+    assert settings['filters']['i_pTM']['threshold'] is None
+    active = build_filters(settings['filters'], 'binder')
+    assert 'i_pSAE' in active and active['i_pSAE'].threshold == 0.7 and active['i_pSAE'].higher is True
+    assert 'i_pTM' not in active
+
+
+def test_a_campaign_can_still_gate_on_iptm_explicitly():
+    """The swap changes the default, not the capability."""
+    from bindcraft.settings import load_settings
+    from bindcraft.filters import build_filters
+    active = build_filters(load_settings({'min_iptm_final': 0.7})['filters'], 'binder')
+    assert active['i_pTM'].threshold == 0.7
 
 
 from bindcraft.preflight import undecided_avoidance
