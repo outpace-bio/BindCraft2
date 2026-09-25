@@ -30,7 +30,7 @@ def desperation_warning(rungs: int, ladder_rungs: int, fruitless_trajectories: i
 def stage_label(stage: str) -> str:
     return f'{stage} design stage'
 
-STAGE_REPORTED_CONFIDENCES = ('pLDDT', 'i_pTM')
+STAGE_REPORTED_CONFIDENCES = ('pLDDT', 'i_pTM', 'i_pSAE')
 
 def stage_confidences(metrics: dict[str, float], target_state_names: tuple[str, ...]=()) -> str:
     reported = {single_state_metric_name(name, target_state_names): value for name, value in metrics.items() if name.split('.')[0] in STAGE_REPORTED_CONFIDENCES}
