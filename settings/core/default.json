@@ -94,6 +94,10 @@
       "higher": true
     },
     "i_pTM": {
+      "threshold": null,
+      "higher": true
+    },
+    "i_pSAE": {
       "threshold": 0.7,
       "higher": true
     },
@@ -113,6 +117,6 @@
   "min_iptm_anneal": 0.5,
   "min_iptm_harden": 0.5,
   "min_iptm_mutate": 0.5,
-  "min_iptm_final": 0.7,
-  "min_plddt_mutate": 0.6
+  "min_plddt_mutate": 0.6,
+  "min_ipsae_final": 0.7
 }

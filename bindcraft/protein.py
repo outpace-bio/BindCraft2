@@ -28,7 +28,7 @@ ATOM_INDEX: dict[str, int] = {atom_name: index for index, atom_name in enumerate
 BINDER_ALONE = 'binder_alone'
 BINDER_CHAIN_PREFIX = 'binder'
 STAMP_FORMAT_VERSION = 3
-QUALITY_METRIC_TYPES: dict[tuple[str, str], str] = {('pLDDT', 'local'): 'pLDDT', ('pLDDT', 'global'): 'pLDDT in [0,1]', ('Target_pLDDT', 'global'): 'pLDDT in [0,1]', ('pTM', 'global'): 'pTM', ('i_pTM', 'global'): 'ipTM'}
+QUALITY_METRIC_TYPES: dict[tuple[str, str], str] = {('pLDDT', 'local'): 'pLDDT', ('pLDDT', 'global'): 'pLDDT in [0,1]', ('Target_pLDDT', 'global'): 'pLDDT in [0,1]', ('pTM', 'global'): 'pTM', ('i_pTM', 'global'): 'ipTM', ('i_pSAE', 'global'): 'ipTM'}
 
 def target_chain_name(target_chain_prefix: str, state_name: str) -> str:
     return f'{target_chain_prefix}_{state_name}'

@@ -89,6 +89,7 @@ Most biological measurements are recorded automatically only when relevant; othe
 | `Binder_pLDDT` | Mean binder CA B-factor when scoring a structure file; 0–100 for BC2 predictions. It is not recoverable from true experimental B-factors. |
 | `pTM` | Predicted confidence in the entire complex geometry, 0–1; higher is better. |
 | `i_pTM` | Interface confidence, 0–1; higher is better for a binding target. |
+| `i_pSAE` | Interface pSAE (Dunbrack 2025, biorxiv 2025.02.10.637595), reproducing the paper's `d0res` variant at a PAE cutoff of 10, taken as the maximum over both chain directions. With `copies` above 1 it is the maximum over binder-chain/target-chain pairs, as upstream reports it, not a score over the pooled copies; the binder-to-binder interface is not part of it. Built to stay sensitive on small and asymmetric interfaces where ipTM saturates. Read it beside `i_pTM`: on our GPC3 set it enriched for binders without separating them, and the highest-scoring design did not bind. |
 | `i_pAE` | Mean interface PAE divided by **31 Å**; lower is better. A value of 0.35 is about 10.85 Å of mean interface PAE. |
 | `i_pDAE` | Distance-masked interface TM confidence, 0–1; higher is better. Uses contacts within 8 Å by default and is BC2's standard ranking score. |
 | `i_pTM_detarget`, `i_pAE_detarget` | The corresponding measurements on an explicitly selected off-target. Interpret the desired direction as avoidance rather than binding. |

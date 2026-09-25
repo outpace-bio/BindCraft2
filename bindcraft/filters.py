@@ -92,6 +92,11 @@ def ptm_metric(protein_states: ProteinStates, predictions: StructurePredictions,
 def iptm_metric(protein_states: ProteinStates, predictions: StructurePredictions, prediction_state: str='complex') -> float:
     return float(predictions[resolve_prediction_state(predictions, prediction_state)].metrics['iptm'])
 
+@filter_metric('i_pSAE')
+@filter_metric('i_pSAE_detarget')
+def ipsae_metric(protein_states: ProteinStates, predictions: StructurePredictions, prediction_state: str='complex') -> float:
+    return float(predictions[resolve_prediction_state(predictions, prediction_state)].metrics['ipsae'])
+
 @filter_metric('i_pAE')
 @filter_metric('i_pAE_detarget')
 def ipae_metric(protein_states: ProteinStates, predictions: StructurePredictions, prediction_state: str='complex', binder: str='binder', target: str='target') -> float:
@@ -809,7 +814,7 @@ for _amino_acid in AMINO_ACIDS:
 def state_filter_name(name: str, state_name: str, states: list[str], state_dependent: bool=True) -> str:
     return f'{name}.{state_name}' if state_dependent and len(states) > 1 else name
 
-def design_stage_filters(design_settings: 'BinderDesignSettings', protein_states: ProteinStates, stage: str, iptm: bool=True, plddt: bool=True, campaign_filters: dict[str, DesignFilter] | None=None) -> dict[str, DesignFilter]:
+def design_stage_filters(design_settings: 'BinderDesignSettings', protein_states: ProteinStates, stage: str, iptm: bool=True, plddt: bool=True, campaign_filters: dict[str, DesignFilter] | None=None, ipsae: bool=True) -> dict[str, DesignFilter]:
     settings = design_settings.settings
     stage_filters = {}
     #read off the resolved states, for disordered-target crops
@@ -823,6 +828,15 @@ def design_stage_filters(design_settings: 'BinderDesignSettings', protein_states
             entry = settings.get('losses', {}).get('iptm_loss', {})
             bound_metric, required_states = bind_state_metric(iptm_metric, {**entry, 'prediction_state': state_name})
             stage_filters[state_filter_name('i_pTM', state_name, complex_states)] = DesignFilter(bound_metric, None if threshold is None else float(threshold), not is_detarget, required_states, threshold is not None)
+        if ipsae and state_name != BINDER_ALONE:
+            is_detarget = state_name in detarget_states
+            threshold = settings.get(f'max_detarget_ipsae_{stage}' if is_detarget else f'min_ipsae_{stage}')
+            #losses.ipsae_loss.params is NOT forwarded: ipsae_loss carries pae_cutoff, warmup_cutoff
+            #and temperature, none of which ipsae_metric accepts, so forwarding them crashes every
+            #stage filter evaluation. The iptm block above is safe only because iptm_loss and
+            #iptm_metric take the same parameters.
+            bound_metric, required_states = bind_state_metric(ipsae_metric, {'prediction_state': state_name})
+            stage_filters[state_filter_name('i_pSAE', state_name, complex_states)] = DesignFilter(bound_metric, None if threshold is None else float(threshold), not is_detarget, required_states, threshold is not None)
     if plddt and settings.get(f'min_plddt_{stage}') is not None:
         for target_name in target_states:
             entry = settings.get('losses', {}).get('plddt_loss', {})

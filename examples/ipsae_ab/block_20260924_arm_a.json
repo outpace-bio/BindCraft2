@@ -1,0 +1,11 @@
+{
+  "target": "hPDL1",
+  "binder_lengths": [60, 60],
+  "max_trajectories": 32,
+  "number_of_final_designs": 999,
+  "campaign_seed": 20260924,
+  "weights_iptm_loss": 0.05,
+  "weights_ipsae_loss": 0.0,
+  "gpu_ids": [0, 1],
+  "project_folder": "results/ipsae_ab_powered/block_20260924_arm_a"
+}

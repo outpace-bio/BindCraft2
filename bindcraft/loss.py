@@ -7,7 +7,8 @@ from jax.scipy.linalg import block_diag
 from typing import Callable, NamedTuple
 from jax import Array
 from bindcraft.developability import EPITOPE_CORE_LENGTH, HYDROPHOBICITY, MHCPanel, mhc_panels, protease_panel
-from bindcraft.protein import AMINO_ACIDS, ATOM_INDEX, BINDER_ALONE, Protein, ProteinStates, ResidueFlags, StructurePredictions, alignment_matrix_product, has_residue_flag, kabsch, real_residue_count, real_residue_mask, real_residue_weights, redesignable_residue_mask
+from bindcraft.protein import AMINO_ACIDS, ATOM_INDEX, BINDER_ALONE, Protein, ProteinStates, ResidueFlags, StructurePredictions, alignment_matrix_product, has_residue_flag, is_binder_chain, kabsch, real_residue_count, real_residue_mask, real_residue_weights, redesignable_residue_mask
+from bindcraft.ipsae import soft_ipsae
 
 class DesignLoss(NamedTuple):
     function: Callable[[ProteinStates, StructurePredictions], Array]
@@ -377,6 +378,36 @@ def radius_of_gyration_loss(protein_states: ProteinStates, predictions: Structur
 @loss('iptm_loss', target_weighting='binds_target')
 def iptm_loss(protein_states: ProteinStates, predictions: StructurePredictions, prediction_state: str='complex') -> Array:
     return 1 - predictions[resolve_prediction_state(predictions, prediction_state)].metrics['iptm']
+
+def annealed_pae_cutoff(sequence_hardness: Array, pae_cutoff: float, warmup_cutoff: float) -> Array:
+    """Walk the PAE cutoff down to the paper's value as the sequence hardens.
+
+    At the paper's cutoff of 10 a step-0 trajectory sits near PAE 30, no pair passes the mask,
+    ipSAE is identically zero and so is its gradient. sequence_hardness is the mean maximum
+    amino-acid probability, so it runs from 1/20 on a uniform sequence to 1 on a discrete one,
+    which tracks how far the sequence has hardened without threading a step count into the loss."""
+    return warmup_cutoff - (warmup_cutoff - pae_cutoff) * jnp.clip((sequence_hardness - 1.0 / len(AMINO_ACIDS)) / (1.0 - 1.0 / len(AMINO_ACIDS)), 0.0, 1.0)
+
+
+@loss('ipsae_loss', target_weighting='binds_target')
+def ipsae_loss(protein_states: ProteinStates, predictions: StructurePredictions, prediction_state: str='complex', pae_cutoff: float=10.0, warmup_cutoff: float=30.0, temperature: float=0.1) -> Array:
+    prediction_state = resolve_prediction_state(predictions, prediction_state)
+    protein_complex = protein_states[prediction_state]
+    binder_chains = [name for name in sorted(protein_complex) if is_binder_chain(name)]
+    if not binder_chains or len(binder_chains) == len(protein_complex):
+        return jnp.asarray(0.0)
+    chain_slices = chain_residue_slices(protein_complex)
+    residue_count = sum(len(protein_complex[name]) for name in sorted(protein_complex))
+    binder_mask = jnp.zeros(residue_count, dtype=jnp.float32)
+    for name in binder_chains:
+        binder_mask = binder_mask.at[chain_slices[name]].set(1.0)
+    real_residues = jnp.concatenate([real_residue_weights(protein_complex[name].flags) for name in sorted(protein_complex)])
+    sequence_hardness = _masked_mean(jnp.concatenate([amino_acid_probabilities(protein_complex[name].sequence).max(-1) for name in binder_chains]),
+                                     jnp.concatenate([real_residue_weights(protein_complex[name].flags) for name in binder_chains]))
+    cutoff = annealed_pae_cutoff(sequence_hardness, pae_cutoff, warmup_cutoff)
+    #the loss reads the symmetrized metrics['pae']; the raw matrix is local to
+    #alphafold_prediction_metrics, and this term already departs from the paper twice
+    return 1 - soft_ipsae(predictions[prediction_state].metrics['pae'], binder_mask * real_residues, (1.0 - binder_mask) * real_residues, cutoff, temperature)
 
 @loss('ptm_loss', target_weighting='every_target')
 def ptm_loss(protein_states: ProteinStates, predictions: StructurePredictions, prediction_state: str='complex') -> Array:

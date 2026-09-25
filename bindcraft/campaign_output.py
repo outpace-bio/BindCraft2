@@ -86,7 +86,7 @@ def is_recorded_reading(value) -> bool:
     return isinstance(value, float) or (getattr(value, 'ndim', None) == 0 and getattr(value, 'dtype', None) is not None and value.dtype.kind == 'f')
 
 DESIGN_IDENTITY_COLUMNS = ('rank', 'trajectory', 'design', 'length', 'outcome')
-LEADING_CONFIDENCE_COLUMNS = (RANKING_METRIC, 'i_pTM', 'pLDDT', 'pTM', 'i_pAE', 'Unbound_Binder_pLDDT', 'Target_pLDDT')
+LEADING_CONFIDENCE_COLUMNS = (RANKING_METRIC, 'i_pTM', 'i_pSAE', 'pLDDT', 'pTM', 'i_pAE', 'Unbound_Binder_pLDDT', 'Target_pLDDT')
 SEQUENCE_COLUMNS = ('Binder_Sequence', 'Interface_Binder_Residues', 'Interface_Target_Residues')
 TRAILING_METADATA_COLUMNS = ('Timing', 'failed_filters', 'hash', 'phase', 'round', 'terminated', 'autotuned', TARGET_NAME_COLUMN, TARGET_WEIGHT_COLUMN, 'settings_core', 'settings_modality', 'settings_property', 'settings_target', 'settings_overrides')
 
