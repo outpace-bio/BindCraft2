@@ -1,4 +1,12 @@
-"""Primary analysis, per the user's choices:
+"""ABANDONED DIRECTION -- kept as the record of why ipSAE is not in the loss.
+
+   ipSAE is a final-stage filter only. This analysis covered arm A (ipTM loss alone)
+   vs arm B (ipTM + ipSAE loss); that direction was dropped on 2026-09-28 and every
+   config for it was deleted in 560865f, along with the ipsae_gated, ipsae_calib and
+   ipsae_additive follow-ups. The script no longer runs: results/ipsae_ab_powered/ and
+   examples/ipsae_ab/ are both gone.
+
+   Primary analysis, per the user's choices:
    endpoint = final recorded ipTM/ipSAE from each trajectory's per-step losses CSV
    terminated trajectories contribute their last recorded value
    all 128 pairs per block-set, paired on trajectory index within block."""
