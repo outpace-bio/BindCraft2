@@ -452,6 +452,12 @@ def load_settings(overrides: dict | None=None) -> dict:
     overrides = campaign_over_presets(copy.deepcopy(overrides or {}))
     reject_unrecognized_settings(overrides)
     reject_percentage_thresholds(overrides)
+    #a null *_final confidence threshold is the key saying nothing, which is the key being absent:
+    #dropping it here takes the shipped default rather than reaching float(None) below, and keeps
+    #the pair agreeing with its filters block
+    for setting_name in FINAL_CONFIDENCE_FILTERS:
+        if overrides.get(setting_name, ...) is None:
+            del overrides[setting_name]
     configured_losses = overrides.pop('losses', {})
     loss_settings = {}
     for name, value in configured_losses.items():
