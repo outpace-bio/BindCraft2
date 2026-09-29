@@ -481,6 +481,7 @@ def load_settings(overrides: dict | None=None) -> dict:
         if setting_name in overrides and isinstance(settings['filters'], dict) and (filter_name not in overrides.get('filters', {})):
             settings['filters'].setdefault(filter_name, {})['threshold'] = float(overrides[setting_name])
     require_paired_confidence_gates(settings, overrides)
+    require_ipsae_gates_only_at_final(settings)
     return settings
 
 #a confidence metric that also has a per-stage spelling is read twice: min_<metric>_final reaches
@@ -502,6 +503,18 @@ def require_paired_confidence_gates(settings: dict, overrides: dict) -> None:
             raise ValueError(f'{setting_name}={stage_threshold!r} and filters.{filter_name}.threshold={filter_threshold!r} disagree, and they are read by different code: '
                              f'{setting_name} gates the final design stage while filters.{filter_name} gates the campaign, so the value that wins depends on which one is asking. '
                              f'{filter_name} has a per-stage spelling, so set both to the same value or set neither and take the default.')
+
+#ipTM is the better signal while the trajectory is still moving and ipSAE the better filter once
+#the structure has settled, so the stages that run during optimisation gate on min_iptm_* and
+#ipSAE gates at `final` alone. Bare max_detarget_ipsae is absent by design: it carries no stage
+#and is the multitarget swap ceiling read in target_schedule.py, not one of these gates.
+TRAJECTORY_IPSAE_GATES = tuple(f'{prefix}_{stage}' for prefix in ('min_ipsae', 'max_detarget_ipsae') for stage in DESIGN_STAGE_NAMES if stage != 'final')
+
+def require_ipsae_gates_only_at_final(settings: dict) -> None:
+    gated = [f'{name}={settings[name]!r}' for name in TRAJECTORY_IPSAE_GATES if settings.get(name) is not None]
+    if gated:
+        raise ValueError(f'{", ".join(gated)} gates a trajectory stage on ipSAE, which only reads as intended once the structure has settled. '
+                         f'Gate the trajectory with the matching min_iptm_* or max_detarget_iptm_* instead, and leave ipSAE to min_ipsae_final.')
 
 def resolved_campaign_facts(settings: dict) -> dict:
     from bindcraft.af2 import MONOMER_POOL, MULTIMER_POOL, campaign_length_bucket
