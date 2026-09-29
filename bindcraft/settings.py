@@ -480,7 +480,28 @@ def load_settings(overrides: dict | None=None) -> dict:
     for setting_name, filter_name in FINAL_CONFIDENCE_FILTERS.items():
         if setting_name in overrides and isinstance(settings['filters'], dict) and (filter_name not in overrides.get('filters', {})):
             settings['filters'].setdefault(filter_name, {})['threshold'] = float(overrides[setting_name])
+    require_paired_confidence_gates(settings, overrides)
     return settings
+
+#a confidence metric that also has a per-stage spelling is read twice: min_<metric>_final reaches
+#the final stage through design_stage_filters, filters.<metric> reaches the campaign through
+#settings['filters']. The two resolve a disagreement in opposite directions, so a campaign that
+#declares one half silently gates on the other. Both halves, in agreement, or neither.
+PAIRED_CONFIDENCE_FILTERS = {'min_iptm_final': 'i_pTM', 'min_ipsae_final': 'i_pSAE'}
+
+def require_paired_confidence_gates(settings: dict, overrides: dict) -> None:
+    if not isinstance(settings.get('filters'), dict):
+        return
+    for setting_name, filter_name in PAIRED_CONFIDENCE_FILTERS.items():
+        if setting_name not in overrides and filter_name not in overrides.get('filters', {}):
+            continue
+        entry = settings['filters'].get(filter_name)
+        filter_threshold = entry.get('threshold') if isinstance(entry, dict) else None
+        stage_threshold = settings.get(setting_name)
+        if (filter_threshold is None) != (stage_threshold is None) or (filter_threshold is not None and float(filter_threshold) != float(stage_threshold)):
+            raise ValueError(f'{setting_name}={stage_threshold!r} and filters.{filter_name}.threshold={filter_threshold!r} disagree, and they are read by different code: '
+                             f'{setting_name} gates the final design stage while filters.{filter_name} gates the campaign, so the value that wins depends on which one is asking. '
+                             f'{filter_name} has a per-stage spelling, so set both to the same value or set neither and take the default.')
 
 def resolved_campaign_facts(settings: dict) -> dict:
     from bindcraft.af2 import MONOMER_POOL, MULTIMER_POOL, campaign_length_bucket
